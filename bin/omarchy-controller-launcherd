@@ -51,6 +51,31 @@ BUTTONS = {
 EVENT_FMT = "llHHi"
 EVENT_SIZE = struct.calcsize(EVENT_FMT)
 
+# The 2026 Steam Controller puck. hid-steam claims 1102, 1142 and 1205 only,
+# so all five of its interfaces fall to hid-generic and the kernel publishes
+# nothing but the firmware's own mouse/keyboard emulation -- lizard mode.
+#
+# The full controller state is there anyway: the vendor collection streams a
+# 53-byte input report 0x42 at ~270Hz whether or not anything has taken the
+# controller out of lizard mode. Reading it needs no driver, no udev rule
+# (logind's ACL already grants the seat owner access to hidraw), and above all
+# no writes -- so nothing about the controller's state outlives this process.
+STEAM_VENDOR, STEAM_PUCK = 0x28DE, 0x1304
+STEAM_REPORT_ID, STEAM_REPORT_LEN = 0x42, 54
+
+# Offsets and masks within report 0x42, mapped by holding each button in turn
+# and diffing against an idle capture.
+STEAM_BUTTONS = {
+    "south": (2, 0x01),
+    "east": (2, 0x02),
+    "west": (2, 0x04),
+    "north": (2, 0x08),
+    "start": (2, 0x40),
+    "select": (3, 0x40),
+    "mode": (4, 0x01),
+}
+STEAM_STICK_X, STEAM_STICK_Y = 10, 12  # int16 LE each, full scale +-32767
+
 _IOC_WRITE, _IOC_READ = 1, 2
 
 
@@ -71,6 +96,30 @@ def _EVIOCGBIT(ev, length):
 
 def _EVIOCGABS(axis):
     return _ioc(_IOC_READ, "E", 0x40 + axis, 24)  # struct input_absinfo
+
+
+# struct hidraw_devinfo { __u32 bustype; __s16 vendor; __s16 product; }
+HIDIOCGRAWINFO = _ioc(_IOC_READ, "H", 0x03, 8)
+
+
+def _HIDIOCGRAWNAME(length):
+    return _ioc(_IOC_READ, "H", 0x04, length)
+
+
+def normalize_axis(bounds, raw):
+    """Map a raw axis reading to -1.0..1.0 with the device's deadzone."""
+    minimum, maximum, flat = bounds
+    span = (maximum - minimum) / 2.0
+    if span <= 0:
+        return 0.0
+    centered = raw - (minimum + span)
+    deadzone = max(flat, span * 0.12)
+    if abs(centered) <= deadzone:
+        return 0.0
+    # Rescale so motion starts at 0 just outside the deadzone rather than
+    # jumping to whatever fraction the deadzone happened to cut off.
+    scaled = (abs(centered) - deadzone) / (span - deadzone)
+    return max(-1.0, min(1.0, scaled if centered > 0 else -scaled))
 
 
 def emit(**payload):
@@ -129,19 +178,26 @@ class Gamepad:
             return None
 
     def normalize(self, axis, raw):
-        """Map a raw axis reading to -1.0..1.0 with the driver's deadzone."""
-        minimum, maximum, flat = self.axes[axis]
-        span = (maximum - minimum) / 2.0
-        if span <= 0:
-            return 0.0
-        centered = raw - (minimum + span)
-        deadzone = max(flat, span * 0.12)
-        if abs(centered) <= deadzone:
-            return 0.0
-        # Rescale so motion starts at 0 just outside the deadzone rather than
-        # jumping to whatever fraction the deadzone happened to cut off.
-        scaled = (abs(centered) - deadzone) / (span - deadzone)
-        return max(-1.0, min(1.0, scaled if centered > 0 else -scaled))
+        return normalize_axis(self.axes[axis], raw)
+
+    def read_events(self):
+        """Decoded (type, code, value) tuples, or None once the node is gone."""
+        try:
+            data = os.read(self.fd, EVENT_SIZE * 64)
+        except BlockingIOError:
+            return []
+        except OSError:
+            return None
+        if not data:
+            return None
+        events = []
+        for offset in range(0, len(data) - EVENT_SIZE + 1, EVENT_SIZE):
+            _sec, _usec, etype, code, value = struct.unpack_from(
+                EVENT_FMT, data, offset
+            )
+            if etype != EV_SYN:
+                events.append((etype, code, value))
+        return events
 
     def set_grab(self, wanted):
         if wanted == self.grabbed:
@@ -170,15 +226,203 @@ class Gamepad:
                 pass
 
 
+class SteamPuck:
+    """The Steam Controller puck, read straight off its vendor hidraw node.
+
+    Presents the same surface as Gamepad, so the daemon above does not know or
+    care which one it is holding.
+    """
+
+    # Full scale on both axes. Bounds rather than the driver's absinfo, which
+    # hidraw does not have; the flat term is the deadzone the pad reports at
+    # rest, measured at roughly +-500 of 32767.
+    AXES = {ABS_X: (-32767, 32767, 600), ABS_Y: (-32767, 32767, 600)}
+
+    def __init__(self, path, fd, name):
+        self.path = path
+        self.fd = fd
+        self.name = name
+        self.axes = self.AXES
+        self.grabbed = False
+        self.pressed = {}
+        self.stick = [None, None]
+        self.lizard_fds = []
+
+    @classmethod
+    def probe(cls, path):
+        """Open a hidraw node and return a SteamPuck if it is a puck."""
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        except OSError:
+            return None
+        try:
+            info = array.array("B", bytes(8))
+            fcntl.ioctl(fd, HIDIOCGRAWINFO, info, True)
+            _bus, vendor, product = struct.unpack("Ihh", bytes(info))
+            if (vendor & 0xFFFF, product & 0xFFFF) != (STEAM_VENDOR, STEAM_PUCK):
+                os.close(fd)
+                return None
+
+            name_buf = array.array("B", bytes(256))
+            try:
+                fcntl.ioctl(fd, _HIDIOCGRAWNAME(256), name_buf, True)
+                name = bytes(name_buf).split(b"\x00", 1)[0].decode("utf-8", "replace")
+            except OSError:
+                name = "Steam Controller"
+            return cls(path, fd, name)
+        except OSError:
+            os.close(fd)
+            return None
+
+    @classmethod
+    def discover(cls):
+        """The puck interface a controller is actually talking on.
+
+        All five interfaces advertise report 0x42, but only the slot holding a
+        connected controller streams it. Rather than guess, open every puck
+        node and keep whichever one delivers first -- at ~270Hz a connected
+        controller answers well inside this window, and an empty slot stays
+        silent forever.
+        """
+        candidates = []
+        for path in sorted(glob.glob("/dev/hidraw*")):
+            puck = cls.probe(path)
+            if puck:
+                candidates.append(puck)
+        if not candidates:
+            return None
+
+        chosen = None
+        by_fd = {puck.fd: puck for puck in candidates}
+        try:
+            ready, _, _ = select.select(list(by_fd), [], [], 0.15)
+        except OSError:
+            ready = []
+        for fd in ready:
+            try:
+                data = os.read(fd, 128)
+            except OSError:
+                continue
+            if data and data[0] == STEAM_REPORT_ID:
+                chosen = by_fd[fd]
+                break
+
+        for puck in candidates:
+            if puck is not chosen:
+                puck.close()
+        return chosen
+
+    def normalize(self, axis, raw):
+        return normalize_axis(self.axes[axis], raw)
+
+    def read_events(self):
+        events = []
+        while True:
+            try:
+                report = os.read(self.fd, 128)
+            except BlockingIOError:
+                break
+            except OSError:
+                return None
+            if not report:
+                return None
+            if len(report) >= STEAM_REPORT_LEN and report[0] == STEAM_REPORT_ID:
+                events.extend(self._decode(report))
+        return events
+
+    def _decode(self, report):
+        """One 0x42 report as evdev-shaped events, emitting only changes."""
+        events = []
+        for name, (offset, mask) in STEAM_BUTTONS.items():
+            held = bool(report[offset] & mask)
+            if held != self.pressed.get(name):
+                self.pressed[name] = held
+                events.append((EV_KEY, BUTTONS[name], 1 if held else 0))
+
+        x = struct.unpack_from("<h", report, STEAM_STICK_X)[0]
+        # The report has +y up. evdev has +y down and everything above this
+        # reads these as evdev, so flip here rather than special-casing there.
+        y = -struct.unpack_from("<h", report, STEAM_STICK_Y)[0]
+        for index, (axis, value) in enumerate(((ABS_X, x), (ABS_Y, y))):
+            if self.stick[index] != value:
+                self.stick[index] = value
+                events.append((EV_ABS, axis, value))
+        return events
+
+    def _lizard_nodes(self):
+        """The evdev nodes the puck's firmware emulation feeds.
+
+        Same hid interface as the report we read, so these are exactly the
+        mouse and keyboard that would otherwise fling the pointer around and
+        type into whatever has focus while the wheel is up.
+        """
+        base = "/sys/class/hidraw/%s/device/input" % os.path.basename(self.path)
+        return [
+            "/dev/input/%s" % os.path.basename(node)
+            for node in sorted(glob.glob(os.path.join(base, "input*", "event*")))
+        ]
+
+    def set_grab(self, wanted):
+        if wanted == self.grabbed:
+            return True
+        if not wanted:
+            self._release()
+            self.grabbed = False
+            return True
+
+        # There is no EVIOCGRAB for hidraw, and the state we read is not what
+        # leaks -- lizard mode is. Grabbing those nodes is the equivalent, and
+        # it stays a property of our open fds: the kernel drops them on exit.
+        ok = True
+        for node in self._lizard_nodes():
+            try:
+                fd = os.open(node, os.O_RDONLY | os.O_NONBLOCK)
+            except OSError as err:
+                emit(t="error", msg="grab failed: %s" % err)
+                ok = False
+                continue
+            try:
+                fcntl.ioctl(fd, EVIOCGRAB, 1)
+                self.lizard_fds.append(fd)
+            except OSError as err:
+                emit(t="error", msg="grab failed: %s" % err)
+                os.close(fd)
+                ok = False
+        self.grabbed = bool(self.lizard_fds)
+        return ok
+
+    def _release(self):
+        while self.lizard_fds:
+            fd = self.lizard_fds.pop()
+            try:
+                fcntl.ioctl(fd, EVIOCGRAB, 0)
+            except OSError:
+                pass
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+    def close(self):
+        self._release()
+        self.grabbed = False
+        try:
+            os.close(self.fd)
+        except OSError:
+            pass
+
+
 def find_gamepad(preferred=None):
-    """First evdev node that looks like a gamepad, or `preferred` if given."""
+    """The device to drive the wheel: a real gamepad, else the Steam puck."""
     if preferred:
-        return Gamepad.probe(preferred)
+        return Gamepad.probe(preferred) or SteamPuck.probe(preferred)
     for path in sorted(glob.glob("/dev/input/event*")):
         pad = Gamepad.probe(path)
         if pad:
             return pad
-    return None
+    # Only once no proper gamepad answered: a DualSense presents as one and is
+    # the better device when both are on the desk.
+    return SteamPuck.discover()
 
 
 class Daemon:
@@ -268,22 +512,12 @@ class Daemon:
                 self.aim_dirty = True
 
     def pump_device(self):
-        try:
-            data = os.read(self.pad.fd, EVENT_SIZE * 64)
-        except BlockingIOError:
-            return
-        except OSError:
+        events = self.pad.read_events()
+        if events is None:  # node went away
             self.detach()
             return
-        if not data:
-            self.detach()
-            return
-        for offset in range(0, len(data) - EVENT_SIZE + 1, EVENT_SIZE):
-            _sec, _usec, etype, code, value = struct.unpack_from(
-                EVENT_FMT, data, offset
-            )
-            if etype != EV_SYN:
-                self.handle_event(etype, code, value)
+        for etype, code, value in events:
+            self.handle_event(etype, code, value)
 
     # --------------------------------------------------------------- control
 
@@ -361,6 +595,12 @@ def main():
             if pad:
                 print("%s  %s" % (path, pad.name))
                 pad.close()
+        # Listed separately: every puck interface advertises the report, so
+        # say which one a controller is actually live on rather than all five.
+        puck = SteamPuck.discover()
+        if puck:
+            print("%s  %s (streaming)" % (puck.path, puck.name))
+            puck.close()
         return 0
 
     summon = "mode"

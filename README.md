@@ -99,7 +99,9 @@ Beyond that, the plugin does not:
 - create a uinput device
 - change any state inside the controller's firmware
 
-That last one is why the Steam Controller is not supported yet; see below.
+That last one is why the Steam Controller is read the way it is: the plugin
+only ever reads the report the controller already sends, and never writes to
+it. See Controller support below.
 
 State lives in the plugin directory and in `shell.json`'s plugin settings, both
 of which `omarchy plugin remove` cleans up.
@@ -212,15 +214,34 @@ well-behaved evdev gamepad, so there is nothing to reverse engineer. The input
 layer is generic evdev, so most gamepads should work; the daemon takes the
 first node with a south face button and a left stick.
 
-**Steam Controller — not yet.** The puck (`28de:1304`) is not in `hid-steam`'s
-device table, so it falls through to `hid-generic` and only presents its
-firmware-level mouse/keyboard emulation. The full state report is reachable —
-the vendor interface advertises a 53-byte input report `0x42` and a 63-byte
-feature channel, the same shape `hid-steam` drives for older models — but
-getting at it means decoding that report, and switching the controller out of
-lizard mode is a *firmware state change that outlives this process*. That is
-the one thing on this page that could persist after removal, so it needs a
-watchdog rather than cleanup-on-exit, and it is deliberately not in v1.
+**Steam Controller — works, without Steam running.** The puck (`28de:1304`) is
+not in `hid-steam`'s device table, which claims only `1102`, `1142` and `1205`.
+So all five of its interfaces fall through to `hid-generic`, the kernel
+publishes no gamepad, and what you get is the controller's own firmware
+emulation — lizard mode, four "Puck Mouse" and four "Puck Keyboard" nodes.
+
+The controller volunteers its real state regardless: the vendor collection
+streams a 53-byte input report `0x42` at about 270Hz whether or not anything
+has taken it out of lizard mode. So the daemon opens that hidraw node and
+reads, and that is the whole trick. No driver, no Steam, nothing to configure
+in Steam, and no udev rule — logind's ACL already grants the seat owner access
+to hidraw.
+
+Above all, no writes. Taking the controller out of lizard mode would be a
+firmware state change that outlives this process, which is the one thing this
+plugin will not do; reading a report the controller was already sending costs
+nothing and leaves nothing behind. The `0x01`/`0x02` feature channel that would
+do the writing goes untouched.
+
+Arming grabs the puck's own mouse and keyboard nodes, which is the equivalent
+of `EVIOCGRAB` on a normal pad: lizard mode originates in firmware, so those
+nodes are what would otherwise fling the pointer around and type into whatever
+has focus while the wheel is up. The kernel drops those grabs when the process
+exits, the same as any other.
+
+The puck has four wireless slots and every one of them advertises the report,
+so the daemon opens all of its interfaces and keeps whichever is actually
+streaming. A slot with no controller on it stays silent.
 
 ## Known limits
 
