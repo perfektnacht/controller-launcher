@@ -62,7 +62,6 @@ Item {
   readonly property int hubRadius: Math.round(outerRadius * 0.43)
   readonly property int extrude: Math.round(outerRadius * 0.055)
   readonly property int faceSize: Math.round(outerRadius * 0.40)
-  readonly property real wedgeGap: 2.6   // degrees of breathing room per side
 
   // Type and iconography scale with the ring so proportions hold at any size,
   // but never drop below the theme's own minimums.
@@ -122,17 +121,35 @@ Item {
   }
 
   // Themes may ship a translucent menu background, which is fine behind a
-  // solid card but lets desktop content read straight through a wedge. Wedges
-  // and hub composite their own near-opaque fill instead.
+  // solid card but lets desktop content read straight through the hub. The
+  // hub composites its own near-opaque fill instead.
   function opaque(base, alpha) {
     return Qt.rgba(base.r, base.g, base.b, alpha)
   }
 
-  function tinted(base, accent, amount) {
-    return Qt.rgba(base.r + (accent.r - base.r) * amount,
-                   base.g + (accent.g - base.g) * amount,
-                   base.b + (accent.b - base.b) * amount,
-                   0.96)
+  // The wedges sit edge to edge with no outline of their own: an outlined
+  // lattice of nine sectors reads as a chart, not as a dial. What separates
+  // them instead is tone. Every wedge is a wash of the theme's window-border
+  // color over the scrim, so the ring looks like it belongs to the same
+  // desktop as the frame around every window, and neighbours alternate a
+  // half-step of that wash so the seams stay legible. It costs nothing beyond
+  // the fill the wedge was already painting -- no strokes for the curve
+  // renderer to trace, no extra passes.
+  function wedgeFill(index, selected, installed, accent) {
+    if (selected) return Qt.rgba(accent.r, accent.g, accent.b, installed ? 0.34 : 0.13)
+    // Two things ride on this one wash, so their ranges are kept apart: an
+    // installed wedge always sits above every uninstalled one, and the
+    // alternation only moves it within its own band. Overlap the two and a
+    // dimmed neighbour reads as just another stripe.
+    //
+    // Alternating by parity closes cleanly only on an even ring; on an odd
+    // one the first and last wedge would both land on the high step and merge
+    // where the circle joins. The last wedge of an odd ring takes a third,
+    // in-between step so that seam survives too.
+    var odd = (root.count % 2 === 1) && (index === root.count - 1)
+    var step = odd ? 2 : (index % 2)
+    var band = installed ? [0.16, 0.115, 0.138] : [0.055, 0.03, 0.043]
+    return Qt.rgba(root.outline.r, root.outline.g, root.outline.b, band[step])
   }
 
   readonly property color activeAccent: root.accentFor(root.selectedEntry)
@@ -323,8 +340,12 @@ Item {
             readonly property real reveal: Math.max(0, Math.min(1,
               root.bloom * (root.count + 1) - wedge.index))
 
-            readonly property real startAngle: wedge.index * root.step - root.step / 2 + root.wedgeGap - 90
-            readonly property real sweepAngle: root.step - root.wedgeGap * 2
+            readonly property real startAngle: wedge.index * root.step - root.step / 2 - 90
+            readonly property real sweepAngle: root.step
+
+            // A lit wedge grows past its neighbours, so it has to paint over
+            // them rather than under whichever one the Repeater built later.
+            z: wedge.selected ? 1 : 0
             // Not readonly: a Behavior needs a writable property to intercept,
             // and the binding still drives it.
             property real ro: (root.outerRadius + (wedge.selected ? root.extrude : 0)) * wedge.reveal
@@ -335,19 +356,15 @@ Item {
             opacity: wedge.reveal
 
             ShapePath {
-              // A dashed outline and a thinner fill mark "not installed here
-              // yet" without pushing the entry out of its slot.
+              // A fainter wash marks "not installed here yet" without pushing
+              // the entry out of its slot; the greyed logo and the label under
+              // it carry the rest of that message.
               // A selected-but-inert wedge still has to show it is selected,
               // but must not out-shout the entries that can actually be run.
-              fillColor: wedge.selected
-                ? root.tinted(root.surface, wedge.accent, wedge.installed ? 0.30 : 0.07)
-                : root.opaque(root.surface, wedge.installed ? 0.97 : 0.82)
-              strokeColor: wedge.selected ? wedge.accent : root.outline
-              strokeWidth: wedge.selected ? 2 : 1
-              strokeStyle: wedge.installed ? ShapePath.SolidLine : ShapePath.DashLine
-              dashPattern: [4, 4]
-              capStyle: ShapePath.FlatCap
-              joinStyle: ShapePath.MiterJoin
+              fillColor: root.wedgeFill(wedge.index, wedge.selected,
+                                        wedge.installed, wedge.accent)
+              // Negative width means no stroke at all.
+              strokeWidth: -1
 
               // Annular sector: out along the start edge, around the outer arc,
               // back in along the end edge, then home along the inner arc.
