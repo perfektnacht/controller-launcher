@@ -172,9 +172,38 @@ Wheel order follows key order. The fields:
 | `media` | basename in `media/`, defaults to the entry id; `""` skips to the glyph |
 | `glyph` | nerd-font fallback |
 
-The summon button, the cancel button, and which controller is used are not
-configurable yet. The plugin launches its daemon with defaults: summon on
-PS / Guide / Steam, cancel on Circle / B, and the first gamepad it finds.
+### The summon button
+
+Summon is on PS / Guide / Steam by default. Steam grabs that button whenever it
+is running, so if the wheel does not come up while Steam has the controller,
+move it to one Steam does not take:
+
+```bash
+omarchy-shell shell setBarWidget perfektnacht.controller-launcher \
+  summonButton '"select"' '{}'
+```
+
+Takes effect immediately — the daemon restarts on the spot, no shell restart.
+One of `south`, `east`, `north`, `west`, `select`, `start`, `mode`, naming the
+physical button by position rather than by the letter printed on it:
+
+| Value | DualSense | Xbox |
+|---|---|---|
+| `south` | Cross | A |
+| `east` | Circle | B |
+| `north` | Triangle | Y |
+| `west` | Square | X |
+| `select` | Create | Back |
+| `start` | Options | Start |
+| `mode` | PS | Guide |
+
+`select` is usually the safest, since little else claims it. Anything not on
+that list falls back to `mode` rather than leaving you without a wheel. The
+setting is stored in `shell.json` alongside the bar widget, so it survives
+restarts; remove the key to go back to the default.
+
+The cancel button (Circle / B) and which controller is used are not
+configurable yet.
 
 ## Controller support
 
@@ -202,8 +231,7 @@ watchdog rather than cleanup-on-exit, and it is deliberately not in v1.
   Heroic's store JSON) is the obvious next ring and would skip launcher UIs
   entirely.
 - The summon button is shared with Steam, which grabs the PS button while it is
-  running. There is no setting to move it yet, so the wheel may not summon while
-  Steam has the controller.
+  running. Move it with `summonButton` above if that bites.
 
 ## Bundled art
 

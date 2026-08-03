@@ -26,6 +26,51 @@ Item {
 
   property var launchers: []
 
+  // ------------------------------------------------------------- the setting
+
+  // What the daemon understands. Anything else in shell.json is a typo, and
+  // falling back beats starting a daemon that exits with "unknown button".
+  readonly property var summonChoices: [
+    "south", "east", "north", "west", "select", "start", "mode"
+  ]
+
+  readonly property string configuredSummon: {
+    var wanted = root.settingValue("summonButton")
+    return root.summonChoices.indexOf(wanted) !== -1 ? wanted : "mode"
+  }
+
+  // Bar widgets are handed their shell.json entry as `settings`; services are
+  // not, so read the same entry the bar widget would. Layout first, then the
+  // top-level plugins array, which is the order the shell writes them in.
+  function settingValue(key) {
+    var config = root.shell ? root.shell.shellConfig : null
+    if (!config) return ""
+
+    var layout = (config.bar && config.bar.layout) ? config.bar.layout : {}
+    var sections = ["left", "center", "right"]
+    for (var s = 0; s < sections.length; s++) {
+      var entries = layout[sections[s]] || []
+      for (var i = 0; i < entries.length; i++) {
+        var found = root.entryValue(entries[i], key)
+        if (found !== "") return found
+      }
+    }
+
+    var plugins = Array.isArray(config.plugins) ? config.plugins : []
+    for (var p = 0; p < plugins.length; p++) {
+      var hit = root.entryValue(plugins[p], key)
+      if (hit !== "") return hit
+    }
+    return ""
+  }
+
+  // Widget ids can carry an instance suffix, so match on the part before it.
+  function entryValue(entry, key) {
+    if (!entry || !entry.id) return ""
+    if (String(entry.id).split("#")[0] !== root.pluginId) return ""
+    return (key in entry) ? String(entry[key]) : ""
+  }
+
   // ------------------------------------------------------------- daemon i/o
 
   // command and running are both set imperatively in startDaemon(). Bound to
@@ -52,13 +97,39 @@ Item {
       root.armed = false
       root.connected = false
       root.hideWheel()
+      // Deferred: `running` is still true inside its own exit handler, and
+      // startDaemon() treats that as "already up" and does nothing.
+      if (root.restartingForSetting) {
+        root.restartingForSetting = false
+        Qt.callLater(root.startDaemon)
+      }
     }
   }
 
   function startDaemon() {
     if (root.pluginDir === "" || daemon.running) return
-    daemon.command = [root.pluginDir + "/bin/omarchy-controller-launcherd"]
+    daemon.command = [root.pluginDir + "/bin/omarchy-controller-launcherd",
+                      "--summon", root.configuredSummon]
     daemon.running = true
+  }
+
+  // The daemon reads --summon once at startup, so a changed setting only
+  // reaches it through a restart.
+  property bool restartingForSetting: false
+
+  // Capture is deliberate and per-session. Editing a setting is not a request
+  // to stop capturing, so a restart that we caused re-arms itself once the new
+  // daemon reports for duty.
+  property bool rearmAfterRestart: false
+
+  onConfiguredSummonChanged: {
+    if (!daemon.running) {
+      startDaemon()
+      return
+    }
+    root.rearmAfterRestart = root.armed
+    root.restartingForSetting = true
+    daemon.running = false
   }
 
   // The shell injects `manifest` after createObject, so pluginDir arrives one
@@ -122,6 +193,10 @@ Item {
       root.connected = event.connected === true
       root.deviceName = String(event.name || "")
       root.summonButton = String(event.summon || root.summonButton)
+      if (root.rearmAfterRestart) {
+        root.rearmAfterRestart = false
+        if (!root.armed) root.arm()
+      }
       break
 
     case "device":
