@@ -1,2 +1,5 @@
 # Per-machine Claude Code permission allowlist, not part of the plugin.
 .claude/settings.local.json
+
+# Byte-compiled daemon, produced by py_compile during development.
+__pycache__/
