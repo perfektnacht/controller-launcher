@@ -1,0 +1,2 @@
+# Per-machine Claude Code permission allowlist, not part of the plugin.
+.claude/settings.local.json

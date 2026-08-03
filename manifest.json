@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "perfektnacht.gamepad-wheel",
+  "name": "Gamepad Wheel",
+  "version": "0.1.0",
+  "author": "perfektnacht",
+  "description": "Hold a controller button for a radial wheel of your game launchers, each opening in its console/gaming mode",
+  "kinds": [
+    "service",
+    "overlay",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "overlay": "Wheel.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Gamepad Wheel",
+    "description": "Arms or disarms controller input capture",
+    "category": "Gaming",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

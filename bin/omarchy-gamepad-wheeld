@@ -1,0 +1,395 @@
+#!/usr/bin/env python3
+"""Watch a gamepad and report wheel gestures as JSON lines on stdout.
+
+Deliberately dumb: it reports button edges and a normalized stick vector and
+lets the QML side decide what a sector is. Nothing about launchers, geometry,
+or Hyprland lives here.
+
+Two states, and the difference is the whole point of the arm/disarm toggle:
+
+  disarmed (default)  passive read only. Every other app on the system sees
+                      the controller exactly as it did before. There is
+                      nothing to undo because nothing was changed.
+  armed               adds EVIOCGRAB, so the summon button does not leak into
+                      whatever has focus. The kernel drops the grab when this
+                      process's fd closes -- including on SIGKILL -- so a crash
+                      cannot leave the controller captured.
+
+Nothing here writes to disk, loads a module, or touches device firmware state.
+stdlib only, so there is no install step.
+
+Protocol
+  stdout  one JSON object per line (see emit() calls below)
+  stdin   "arm" | "disarm" | "status" | "quit", one per line
+"""
+
+import array
+import fcntl
+import glob
+import json
+import os
+import select
+import signal
+import struct
+import sys
+import time
+
+EV_SYN, EV_KEY, EV_ABS = 0x00, 0x01, 0x03
+ABS_X, ABS_Y = 0x00, 0x01
+
+BUTTONS = {
+    "south": 0x130,   # Cross / A
+    "east": 0x131,    # Circle / B
+    "north": 0x133,   # Triangle / Y
+    "west": 0x134,    # Square / X
+    "select": 0x13A,  # Create / Back
+    "start": 0x13B,   # Options / Start
+    "mode": 0x13C,    # PS / Guide / Steam
+}
+
+# struct input_event { struct timeval time; __u16 type, code; __s32 value; }
+EVENT_FMT = "llHHi"
+EVENT_SIZE = struct.calcsize(EVENT_FMT)
+
+_IOC_WRITE, _IOC_READ = 1, 2
+
+
+def _ioc(direction, letter, nr, size):
+    return (direction << 30) | (size << 16) | (ord(letter) << 8) | nr
+
+
+EVIOCGRAB = _ioc(_IOC_WRITE, "E", 0x90, 4)
+
+
+def _EVIOCGNAME(length):
+    return _ioc(_IOC_READ, "E", 0x06, length)
+
+
+def _EVIOCGBIT(ev, length):
+    return _ioc(_IOC_READ, "E", 0x20 + ev, length)
+
+
+def _EVIOCGABS(axis):
+    return _ioc(_IOC_READ, "E", 0x40 + axis, 24)  # struct input_absinfo
+
+
+def emit(**payload):
+    sys.stdout.write(json.dumps(payload) + "\n")
+    sys.stdout.flush()
+
+
+def _bit_set(buf, bit):
+    return bool(buf[bit >> 3] & (1 << (bit & 7)))
+
+
+class Gamepad:
+    """One evdev node that looks like a gamepad."""
+
+    def __init__(self, path, fd, name, axes):
+        self.path = path
+        self.fd = fd
+        self.name = name
+        self.axes = axes  # {code: (minimum, maximum, flat)}
+        self.grabbed = False
+
+    @classmethod
+    def probe(cls, path):
+        """Open path and return a Gamepad if it has sticks and face buttons."""
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        except OSError:
+            return None
+        try:
+            name_buf = array.array("B", bytes(256))
+            fcntl.ioctl(fd, _EVIOCGNAME(256), name_buf, True)
+            name = bytes(name_buf).split(b"\x00", 1)[0].decode("utf-8", "replace")
+
+            keys = array.array("B", bytes(96))  # covers codes up to 0x2FF
+            fcntl.ioctl(fd, _EVIOCGBIT(EV_KEY, len(keys)), keys, True)
+            absolute = array.array("B", bytes(8))
+            fcntl.ioctl(fd, _EVIOCGBIT(EV_ABS, len(absolute)), absolute, True)
+
+            # A gamepad has a south face button and a left stick. The
+            # DualSense's motion-sensor and touchpad nodes share its name and
+            # vendor id but fail this, which is exactly what we want.
+            if not _bit_set(keys, BUTTONS["south"]):
+                return None
+            if not (_bit_set(absolute, ABS_X) and _bit_set(absolute, ABS_Y)):
+                return None
+
+            axes = {}
+            for axis in (ABS_X, ABS_Y):
+                info = array.array("B", bytes(24))
+                fcntl.ioctl(fd, _EVIOCGABS(axis), info, True)
+                _value, minimum, maximum, _fuzz, flat, _res = struct.unpack("6i", info)
+                axes[axis] = (minimum, maximum, flat)
+            return cls(path, fd, name, axes)
+        except OSError:
+            os.close(fd)
+            return None
+
+    def normalize(self, axis, raw):
+        """Map a raw axis reading to -1.0..1.0 with the driver's deadzone."""
+        minimum, maximum, flat = self.axes[axis]
+        span = (maximum - minimum) / 2.0
+        if span <= 0:
+            return 0.0
+        centered = raw - (minimum + span)
+        deadzone = max(flat, span * 0.12)
+        if abs(centered) <= deadzone:
+            return 0.0
+        # Rescale so motion starts at 0 just outside the deadzone rather than
+        # jumping to whatever fraction the deadzone happened to cut off.
+        scaled = (abs(centered) - deadzone) / (span - deadzone)
+        return max(-1.0, min(1.0, scaled if centered > 0 else -scaled))
+
+    def set_grab(self, wanted):
+        if wanted == self.grabbed:
+            return True
+        try:
+            fcntl.ioctl(self.fd, EVIOCGRAB, 1 if wanted else 0)
+        except OSError as err:
+            emit(t="error", msg="grab failed: %s" % err)
+            return False
+        self.grabbed = wanted
+        return True
+
+    def close(self):
+        # Closing the fd is what actually releases the grab; the explicit
+        # ungrab is only so a still-open duplicate fd would not keep it.
+        try:
+            if self.grabbed:
+                fcntl.ioctl(self.fd, EVIOCGRAB, 0)
+        except OSError:
+            pass
+        finally:
+            self.grabbed = False
+            try:
+                os.close(self.fd)
+            except OSError:
+                pass
+
+
+def find_gamepad(preferred=None):
+    """First evdev node that looks like a gamepad, or `preferred` if given."""
+    if preferred:
+        return Gamepad.probe(preferred)
+    for path in sorted(glob.glob("/dev/input/event*")):
+        pad = Gamepad.probe(path)
+        if pad:
+            return pad
+    return None
+
+
+class Daemon:
+    AIM_INTERVAL = 1.0 / 60.0
+
+    def __init__(self, summon_button, cancel_button, device=None):
+        self.device = device
+        self.summon_code = BUTTONS[summon_button]
+        self.cancel_code = BUTTONS[cancel_button]
+        self.summon_name = summon_button
+        self.pad = None
+        self.armed = False
+        self.running = True
+
+        self.open = False       # wheel currently summoned
+        self.cancelled = False  # cancel pressed during this summon
+        self.aim = [0.0, 0.0]
+        self.aim_sent = 0.0
+        self.aim_dirty = False
+
+    # ---------------------------------------------------------------- device
+
+    def attach(self):
+        pad = find_gamepad(self.device)
+        if not pad:
+            return False
+        self.pad = pad
+        if self.armed:
+            pad.set_grab(True)
+        emit(t="device", connected=True, name=pad.name, path=pad.path)
+        return True
+
+    def detach(self):
+        if not self.pad:
+            return
+        name = self.pad.name
+        self.pad.close()
+        self.pad = None
+        if self.open:
+            self.close_wheel(commit=False)
+        emit(t="device", connected=False, name=name)
+
+    # ----------------------------------------------------------------- wheel
+
+    def open_wheel(self):
+        self.open = True
+        self.cancelled = False
+        self.aim = [0.0, 0.0]
+        emit(t="summon")
+        emit(t="aim", x=0.0, y=0.0)
+
+    def close_wheel(self, commit):
+        self.open = False
+        if commit and not self.cancelled:
+            emit(t="commit", x=self.aim[0], y=self.aim[1])
+        else:
+            emit(t="cancel")
+        self.cancelled = False
+
+    def flush_aim(self, now):
+        if not self.aim_dirty or now - self.aim_sent < self.AIM_INTERVAL:
+            return
+        self.aim_dirty = False
+        self.aim_sent = now
+        emit(t="aim", x=self.aim[0], y=self.aim[1])
+
+    # ---------------------------------------------------------------- events
+
+    def handle_event(self, etype, code, value):
+        if etype == EV_KEY:
+            if code == self.summon_code:
+                if value == 1 and not self.open:
+                    self.open_wheel()
+                elif value == 0 and self.open:
+                    self.close_wheel(commit=True)
+            elif code == self.cancel_code and value == 1 and self.open:
+                self.cancelled = True
+                emit(t="aborting")
+        elif etype == EV_ABS and self.open:
+            if code == ABS_X:
+                self.aim[0] = self.pad.normalize(ABS_X, value)
+                self.aim_dirty = True
+            elif code == ABS_Y:
+                # evdev Y grows downward; the wheel thinks in screen space too,
+                # so this is passed through rather than flipped.
+                self.aim[1] = self.pad.normalize(ABS_Y, value)
+                self.aim_dirty = True
+
+    def pump_device(self):
+        try:
+            data = os.read(self.pad.fd, EVENT_SIZE * 64)
+        except BlockingIOError:
+            return
+        except OSError:
+            self.detach()
+            return
+        if not data:
+            self.detach()
+            return
+        for offset in range(0, len(data) - EVENT_SIZE + 1, EVENT_SIZE):
+            _sec, _usec, etype, code, value = struct.unpack_from(
+                EVENT_FMT, data, offset
+            )
+            if etype != EV_SYN:
+                self.handle_event(etype, code, value)
+
+    # --------------------------------------------------------------- control
+
+    def set_armed(self, wanted):
+        self.armed = wanted
+        if self.pad:
+            self.pad.set_grab(wanted)
+        self.report_status()
+
+    def report_status(self):
+        emit(
+            t="status",
+            armed=self.armed,
+            grabbed=bool(self.pad and self.pad.grabbed),
+            connected=bool(self.pad),
+            name=self.pad.name if self.pad else "",
+            summon=self.summon_name,
+        )
+
+    def handle_command(self, line):
+        command = line.strip().lower()
+        if command == "arm":
+            self.set_armed(True)
+        elif command == "disarm":
+            self.set_armed(False)
+        elif command == "status":
+            self.report_status()
+        elif command == "quit":
+            self.running = False
+
+    # ------------------------------------------------------------------ loop
+
+    def run(self):
+        self.attach()
+        self.report_status()
+        stdin_fd = sys.stdin.fileno()
+        next_scan = 0.0
+
+        while self.running:
+            now = time.monotonic()
+            if not self.pad and now >= next_scan:
+                next_scan = now + 1.0
+                self.attach()
+
+            fds = [stdin_fd] + ([self.pad.fd] if self.pad else [])
+            timeout = self.AIM_INTERVAL if self.aim_dirty else 1.0
+            try:
+                ready, _, _ = select.select(fds, [], [], timeout)
+            except InterruptedError:
+                continue
+
+            if stdin_fd in ready:
+                line = sys.stdin.readline()
+                if not line:  # shell closed the pipe
+                    break
+                self.handle_command(line)
+            if self.pad and self.pad.fd in ready:
+                self.pump_device()
+
+            self.flush_aim(time.monotonic())
+
+        self.shutdown()
+
+    def shutdown(self):
+        if self.pad:
+            self.pad.close()
+            self.pad = None
+
+
+def main():
+    args = sys.argv[1:]
+    if "--list-devices" in args:
+        for path in sorted(glob.glob("/dev/input/event*")):
+            pad = Gamepad.probe(path)
+            if pad:
+                print("%s  %s" % (path, pad.name))
+                pad.close()
+        return 0
+
+    summon = "mode"
+    cancel = "east"
+    device = None
+    for index, arg in enumerate(args):
+        if arg == "--summon" and index + 1 < len(args):
+            summon = args[index + 1]
+        elif arg == "--cancel" and index + 1 < len(args):
+            cancel = args[index + 1]
+        elif arg == "--device" and index + 1 < len(args):
+            device = args[index + 1]
+    if summon not in BUTTONS or cancel not in BUTTONS:
+        sys.stderr.write("unknown button; known: %s\n" % ", ".join(sorted(BUTTONS)))
+        return 2
+
+    daemon = Daemon(summon, cancel, device)
+
+    def stop(_signum, _frame):
+        daemon.running = False
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    try:
+        daemon.run()
+    finally:
+        daemon.shutdown()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

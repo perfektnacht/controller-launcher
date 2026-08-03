@@ -1,0 +1,213 @@
+# Gamepad Wheel
+
+An Omarchy 4 plugin. Hold a button on your controller, flick the left stick,
+release — the launcher you picked opens in its console/gaming mode. The point
+is to get from a controller in your hands to a game running without touching a
+keyboard.
+
+![the wheel](screenshot.png)
+
+## What it does
+
+Holding the summon button (PS / Guide / Steam by default) puts a donut of arc
+wedges in the middle of the screen, one per launcher, laid out clockwise from
+the top with each launcher's real icon. The left stick's direction lights a
+wedge — it extrudes outward, fills with that launcher's brand color, and the
+hub swaps to its logo and name. Releasing the summon button fires it. There is
+no confirm step, so the whole gesture is about half a second once you know
+where things are.
+
+The ring unfurls clockwise on open, and a soft halo behind the dial picks up
+the selected launcher's color.
+
+Everything is sized as a proportion of the shorter screen edge rather than in
+fixed pixels, so the wheel fills the display it is on — this is gaming mode, it
+should own the screen — and a 13" laptop gets the same proportions as a 27"
+monitor instead of a postage stamp in the middle.
+
+Icons resolve in three tiers: the system icon theme first, so installed apps
+match the rest of your desktop; then a logo bundled in `media/`; then the
+entry's nerd-font glyph. The middle tier matters more than it sounds — an
+application that is not installed has no icon-theme entry by definition, so
+without bundled art every uninstalled wedge would fall back to a glyph, and
+several of those are simply missing from JetBrainsMono Nerd Font.
+
+Circle / B while holding cancels. So does Escape, or a click anywhere outside
+the wheel — every cell is also clickable, so the wheel works with a mouse and
+is testable with no controller attached at all.
+
+The wheel carries Omarchy's stock gaming roster:
+
+| Entry | Launches |
+|---|---|
+| Steam | `steam steam://open/bigpicture` — Big Picture |
+| Heroic | `heroic --console` — Console Mode |
+| Battle.net | `omarchy-launch-battlenet` |
+| Lutris | `lutris` |
+| RetroArch | `retroarch` |
+| Minecraft | `minecraft-launcher` |
+| GeForce NOW | `flatpak run com.nvidia.geforcenow` |
+| Xbox Cloud | `omarchy-launch-webapp …/play` |
+| Desktop | dismiss |
+
+**An entry you have not installed still gets a sector, but it is inert.** It
+draws dashed, dimmed, with a desaturated logo and a "not installed" caption;
+the hub reads *Not installed*; and releasing on it does nothing. This wheel
+launches games — it does not install software. Install something through
+Omarchy's own menu and it comes to life on the next summon, no restart.
+
+Keeping the sector rather than hiding it is deliberate: positions are fixed and
+never reorder, because a radial menu is only fast if muscle memory holds. An
+entry that appears and disappears as you install things would move everything
+after it.
+
+Two of Omarchy's gaming menu entries are deliberately absent. **Xbox
+Controllers** installs `xpadneo-dkms`, a driver — there is nothing to launch,
+so under the inert rule it could only ever be a permanently dead sector.
+**RetroArch Game Launcher** is an interactive tool that prompts for a core and
+a ROM path through fuzzy menus to generate a per-game `.desktop` — a keyboard
+flow, and precisely what this wheel exists to avoid.
+
+## Nothing persists
+
+Removing this plugin returns the machine to exactly where it started. That is a
+design constraint, not a side effect, so it is worth being specific about what
+it rules out.
+
+The plugin has two states, and the difference between them is the whole point
+of the bar toggle:
+
+- **Passive** (the default, and the state after every shell start). The daemon
+  reads the controller and nothing else. Every game and application sees the
+  controller exactly as it did before. There is nothing to undo, because
+  nothing was changed.
+- **Capturing.** Adds `EVIOCGRAB` on the gamepad so the summon button does not
+  leak into whatever has focus. The kernel drops the grab when the process's fd
+  closes, including on `SIGKILL`, so a crash cannot leave your controller
+  captured.
+
+You turn capturing on deliberately, and it is never remembered — `armed` is not
+persisted anywhere, so every shell start comes up passive. Input capture is
+always something you switched on this session, never something a previous one
+left behind.
+
+Beyond that, the plugin does not:
+
+- write to `~/.config/hypr/` or add any keybind (it reads the gamepad directly)
+- install a udev rule, a systemd unit, or a modprobe config
+- load, bind, or patch a kernel module
+- create a uinput device
+- change any state inside the controller's firmware
+
+That last one is why the Steam Controller is not supported yet; see below.
+
+State lives in the plugin directory and in `shell.json`'s plugin settings, both
+of which `omarchy plugin remove` cleans up.
+
+## Install
+
+```bash
+ln -s "$PWD" ~/.config/omarchy/plugins/perfektnacht.gamepad-wheel
+omarchy-shell shell rescanPlugins
+omarchy plugin enable perfektnacht.gamepad-wheel right
+omarchy restart shell
+```
+
+The bar widget shows a controller glyph — dim when passive, bright when
+capturing. Left click toggles capture; right click opens the wheel without a
+controller.
+
+To see QML errors live, which `omarchy restart shell` swallows:
+
+```bash
+quickshell kill -p /usr/share/omarchy/shell --any-display
+quickshell -n -p /usr/share/omarchy/shell
+```
+
+## Configuration
+
+Drop a `~/.config/omarchy/extensions/gamepad-wheel.json` to override entries by
+key. It is merged over the defaults, so you only name what you are changing:
+
+```json
+{
+  "steam": { "sublabel": "Big Picture, 4K" },
+  "battlenet": { "when": "false" },
+  "moonlight": {
+    "icon": "moonlight",
+    "glyph": "󰊴",
+    "accent": "#8bc34a",
+    "label": "Moonlight",
+    "sublabel": "Streaming",
+    "installed": "command -v moonlight",
+    "action": "moonlight",
+    "install": "omarchy-launch-floating-terminal-with-presentation 'yay -S moonlight-qt'"
+  }
+}
+```
+
+Wheel order follows key order. The fields:
+
+| Field | Meaning |
+|---|---|
+| `when` | should this entry appear at all — set `"false"` to hide a default |
+| `installed` | shell guard; a non-zero exit renders the entry inert |
+| `action` | run when installed; empty just dismisses, which is the `desktop` cell |
+| `install` | carried through but unused — reserved, in case install-on-select ever returns behind a flag |
+| `accent` | brand color for the wedge, hub, and halo; empty inherits the theme accent |
+| `icon` | icon-theme name, tried first |
+| `media` | basename in `media/`, defaults to the entry id; `""` skips to the glyph |
+| `glyph` | nerd-font fallback |
+
+The daemon takes `--summon` and `--cancel` (one of `south`, `east`, `north`,
+`west`, `select`, `start`, `mode`), plus `--device` to pin a specific evdev
+node and `--list-devices` to see what it would pick.
+
+## Controller support
+
+**DualSense — works.** The kernel's `playstation` driver exposes it as a
+well-behaved evdev gamepad, so there is nothing to reverse engineer. The input
+layer is generic evdev, so most gamepads should work; the daemon takes the
+first node with a south face button and a left stick.
+
+**Steam Controller — not yet.** The puck (`28de:1304`) is not in `hid-steam`'s
+device table, so it falls through to `hid-generic` and only presents its
+firmware-level mouse/keyboard emulation. The full state report is reachable —
+the vendor interface advertises a 53-byte input report `0x42` and a 63-byte
+feature channel, the same shape `hid-steam` drives for older models — but
+getting at it means decoding that report, and switching the controller out of
+lizard mode is a *firmware state change that outlives this process*. That is
+the one thing on this page that could persist after removal, so it needs a
+watchdog rather than cleanup-on-exit, and it is deliberately not in v1.
+
+## Known limits
+
+- Battle.net has no controller navigation once it opens; it is a Wine window.
+  Steam and Heroic both hand off cleanly to full gamepad UIs.
+- The wheel launches launchers, not games. Launching a specific game directly
+  (`steam://rungameid/…` from the `.acf` files, `heroic://launch/…` from
+  Heroic's store JSON) is the obvious next ring and would skip launcher UIs
+  entirely.
+- The summon button is shared with Steam, which grabs the PS button while it is
+  running. Change it with `--summon` if that bites.
+
+## Bundled art
+
+`media/` holds each launcher's logo so uninstalled entries still look like
+themselves. Sources, all fetched at build time and rasterised to 256px PNG:
+
+- `steam`, `minecraft`, `geforce-now`, `xbox-cloud` —
+  [homarr-labs/dashboard-icons](https://github.com/homarr-labs/dashboard-icons),
+  the same set Omarchy's own Xbox installer pulls from
+- `heroic` — the Heroic Games Launcher repo
+- `lutris` — the Lutris repo
+- `battlenet`, `retroarch` — [simple-icons](https://simpleicons.org), tinted to
+  each entry's accent
+
+The SVG-sourced ones are rasterised with `rsvg-convert -w 512 -h 512`, not with
+ImageMagick's `-resize`. ImageMagick renders an SVG at its intrinsic viewBox
+size first and then scales that bitmap, so a 24×24 simple-icons source came out
+visibly soft; rsvg renders the vector at the target size instead.
+
+These are the applications' own marks, included to identify them. They belong
+to their respective owners.

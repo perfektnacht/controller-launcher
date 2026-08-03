@@ -1,0 +1,73 @@
+#!/bin/bash
+
+# Emits the launcher entries whose `when` guard passes, as a JSON array, in
+# declaration order. Defaults ship with the plugin; anything in the user file
+# is merged over them by key, so you can retitle, reorder, add, or drop an
+# entry without editing a tracked file.
+#
+# Two guards, doing different jobs:
+#   when       should this entry appear on the wheel at all (default: yes)
+#   installed  is the application present -- decides whether selecting it
+#              launches or offers to install it
+#
+# Entries keep their slot whether or not they are installed, because a radial
+# menu is only fast if positions never move. Set "when" to "false" to hide a
+# default entry outright.
+
+set -uo pipefail
+
+plugin_dir=$(dirname "$(dirname "$(readlink -f "$0")")")
+defaults="$plugin_dir/launchers.json"
+user_file="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/extensions/gamepad-wheel.json"
+
+[[ -f $defaults ]] || { echo "[]"; exit 0; }
+
+if [[ -f $user_file ]] && jq -e . "$user_file" >/dev/null 2>&1; then
+  merged=$(jq -s '.[0] * .[1]' "$defaults" "$user_file")
+else
+  merged=$(cat "$defaults")
+fi
+
+# One pass to collect the guards, evaluate them in this shell, then a second
+# pass to build the array. Keeps `when` out of jq and jq out of bash's way.
+entries=()
+states=()
+while IFS= read -r id; do
+  when=$(jq -r --arg id "$id" '.[$id].when // "true"' <<<"$merged")
+  bash -c "$when" >/dev/null 2>&1 || continue
+
+  installed=$(jq -r --arg id "$id" '.[$id].installed // "true"' <<<"$merged")
+  if bash -c "$installed" >/dev/null 2>&1; then
+    states+=("true")
+  else
+    states+=("false")
+  fi
+  entries+=("$id")
+done < <(jq -r 'keys_unsorted[]' <<<"$merged")
+
+if ((${#entries[@]} == 0)); then
+  echo "[]"
+  exit 0
+fi
+
+# Pair each surviving id with the guard result, then let jq assemble the
+# records so nothing has to be escaped by hand.
+ids_json=$(printf '%s\n' "${entries[@]}" | jq -R . | jq -s .)
+states_json=$(printf '%s\n' "${states[@]}" | jq -s .)
+
+jq -n --argjson all "$merged" --argjson ids "$ids_json" --argjson states "$states_json" '
+  [range(0; $ids | length)]
+  | map($ids[.] as $id | $all[$id] + {id: $id, installed: $states[.]})
+  | map({
+      id,
+      label: (.label // .id),
+      sublabel: (.sublabel // ""),
+      icon: (.icon // ""),
+      glyph: (.glyph // ""),
+      accent: (.accent // ""),
+      media: (.media // .id),
+      installed,
+      action: (.action // ""),
+      install: (.install // "")
+    })
+'

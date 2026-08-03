@@ -1,0 +1,93 @@
+{
+  "steam": {
+    "icon": "steam",
+    "glyph": "",
+    "accent": "#66c0f4",
+    "label": "Steam",
+    "sublabel": "Big Picture",
+    "installed": "omarchy-pkg-present steam",
+    "action": "steam steam://open/bigpicture",
+    "install": "omarchy-launch-floating-terminal-with-presentation omarchy-install-gaming-steam"
+  },
+  "heroic": {
+    "icon": "heroic",
+    "glyph": "\udb85\udcdf",
+    "accent": "#8a4fff",
+    "label": "Heroic",
+    "sublabel": "Console Mode",
+    "installed": "omarchy-pkg-present heroic-games-launcher-bin",
+    "action": "heroic --console",
+    "install": "omarchy-launch-floating-terminal-with-presentation omarchy-install-gaming-heroic"
+  },
+  "battlenet": {
+    "icon": "battle-net",
+    "glyph": "",
+    "accent": "#00aeff",
+    "label": "Battle.net",
+    "sublabel": "Blizzard",
+    "installed": "[[ -d $HOME/Games/battlenet ]]",
+    "action": "omarchy-launch-battlenet",
+    "install": "omarchy-launch-floating-terminal-with-presentation omarchy-install-gaming-battlenet"
+  },
+  "lutris": {
+    "icon": "lutris",
+    "glyph": "",
+    "accent": "#ff9900",
+    "label": "Lutris",
+    "sublabel": "",
+    "installed": "omarchy-pkg-present lutris",
+    "action": "lutris",
+    "install": "omarchy-launch-floating-terminal-with-presentation omarchy-install-gaming-lutris"
+  },
+  "retroarch": {
+    "icon": "retroarch",
+    "glyph": "\udb82\udfc9",
+    "accent": "#ff4f4f",
+    "label": "RetroArch",
+    "sublabel": "Emulation",
+    "installed": "omarchy-pkg-present retroarch",
+    "action": "retroarch",
+    "install": "omarchy-launch-floating-terminal-with-presentation omarchy-install-gaming-retroarch"
+  },
+  "minecraft": {
+    "icon": "minecraft-launcher",
+    "glyph": "\udb80\udf73",
+    "accent": "#7ac74f",
+    "label": "Minecraft",
+    "sublabel": "",
+    "installed": "omarchy-pkg-present minecraft-launcher",
+    "action": "minecraft-launcher",
+    "install": "omarchy-install-and-launch Minecraft minecraft-launcher minecraft-launcher"
+  },
+  "geforce-now": {
+    "icon": "com.nvidia.geforcenow",
+    "glyph": "\udb82\udcb9",
+    "accent": "#76b900",
+    "label": "GeForce NOW",
+    "sublabel": "Streaming",
+    "installed": "flatpak info com.nvidia.geforcenow",
+    "action": "flatpak run com.nvidia.geforcenow",
+    "install": "omarchy-launch-floating-terminal-with-presentation omarchy-install-gaming-geforce-now"
+  },
+  "xbox-cloud": {
+    "icon": "xbox",
+    "glyph": "",
+    "accent": "#107c10",
+    "label": "Xbox Cloud",
+    "sublabel": "Streaming",
+    "installed": "[[ -f \"$HOME/.local/share/applications/Xbox Cloud Gaming.desktop\" ]]",
+    "action": "omarchy-launch-webapp https://www.xbox.com/en-US/play",
+    "install": "omarchy-launch-floating-terminal-with-presentation omarchy-install-gaming-xbox-cloud"
+  },
+  "desktop": {
+    "icon": "",
+    "glyph": "\udb80\udf79",
+    "accent": "",
+    "label": "Desktop",
+    "sublabel": "Dismiss",
+    "installed": "true",
+    "action": "",
+    "install": "",
+    "media": ""
+  }
+}
