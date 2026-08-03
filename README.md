@@ -9,7 +9,7 @@ keyboard.
 
 ## What it does
 
-Holding the summon button (PS / Guide / Steam by default) puts a donut of arc
+Holding the summon button (PS / Xbox / Steam by default) puts a donut of arc
 wedges in the middle of the screen, one per launcher, laid out clockwise from
 the top with each launcher's real icon. The left stick's direction lights a
 wedge — it extrudes outward, fills with that launcher's brand color, and the
@@ -51,7 +51,7 @@ The wheel carries Omarchy's stock gaming roster:
 | Desktop | dismiss |
 
 **An entry you have not installed still gets a sector, but it is inert.** It
-draws dashed, dimmed, with a desaturated logo and a "not installed" caption;
+draws as a fainter card, with a desaturated logo and a "not installed" caption;
 the hub reads *Not installed*; and releasing on it does nothing. This wheel
 launches games — it does not install software. Install something through
 Omarchy's own menu and it comes to life on the next summon, no restart.
@@ -109,7 +109,7 @@ of which `omarchy plugin remove` cleans up.
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/perfektnacht/controller-launcher --enable
+omarchy plugin add https://github.com/perfektnacht/controller-launcher --enable && omarchy restart shell
 ```
 
 That clones the repository into `~/.config/omarchy/plugins/`, then asks whether
@@ -118,6 +118,10 @@ takes `right` without asking. The install directory is named from the manifest's
 `id`, not from the repository, so it lands at
 `~/.config/omarchy/plugins/perfektnacht.controller-launcher` — the shell will
 not find the plugin if the two disagree.
+
+The restart is part of the line because entry points are read when the shell
+starts: without it the plugin is installed and enabled but nothing appears in
+the bar until the next restart, which reads as the install having failed.
 
 To update later:
 
@@ -130,8 +134,8 @@ omarchy restart shell
 shell starts, so the restart is what actually loads changed QML.
 
 The bar widget shows a controller glyph — dim when passive, bright when
-capturing. Left click toggles capture; right click opens the wheel without a
-controller.
+capturing. Left click toggles capture; right click opens a menu holding the
+controller picker and the wheel itself.
 
 To remove it again:
 
@@ -176,7 +180,7 @@ Wheel order follows key order. The fields:
 
 ### The summon button
 
-Summon is on PS / Guide / Steam by default. Steam grabs that button whenever it
+Summon is on PS / Xbox / Steam by default. Steam grabs that button whenever it
 is running, so if the wheel does not come up while Steam has the controller,
 move it to one Steam does not take:
 
@@ -197,7 +201,7 @@ physical button by position rather than by the letter printed on it:
 | `west` | Square | X |
 | `select` | Create | Back |
 | `start` | Options | Start |
-| `mode` | PS | Guide |
+| `mode` | PS | Xbox |
 
 `select` is usually the safest, since little else claims it. Anything not on
 that list falls back to `mode` rather than leaving you without a wheel. The
