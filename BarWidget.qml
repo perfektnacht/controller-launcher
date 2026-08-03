@@ -40,6 +40,28 @@ BarWidget {
     root.menuOpen = false
   }
 
+  // Kernel device names lead with the manufacturer's full legal name, which is
+  // most of the width and none of the information: "Sony Interactive
+  // Entertainment DualSense Wireless Controller" elides to "Sony Interactive
+  // Entertainment DualS...", telling you nothing about which pad it is. Only
+  // exact known prefixes are dropped, so an unrecognised device keeps its name
+  // whole rather than being trimmed by a guess.
+  readonly property var vendorPrefixes: [
+    "Sony Interactive Entertainment ",
+    "Valve Software ",
+    "Microsoft ",
+    "Nintendo "
+  ]
+
+  function shortName(name) {
+    var text = String(name || "")
+    for (var i = 0; i < root.vendorPrefixes.length; i++) {
+      var prefix = root.vendorPrefixes[i]
+      if (text.indexOf(prefix) === 0) return text.substring(prefix.length)
+    }
+    return text
+  }
+
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
@@ -148,11 +170,26 @@ BarWidget {
               font.pixelSize: Style.font.bodySmall
             }
 
+            // Right-aligned and outside the eliding name, or the marker that
+            // says which controller is actually driving the wheel is the first
+            // thing a long device name eats.
+            Text {
+              id: inUse
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.right: parent.right
+              visible: deviceRow.live
+              text: "in use"
+              color: Color.accent
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+
             Text {
               anchors.verticalCenter: parent.verticalCenter
               anchors.left: mark.right
-              anchors.right: parent.right
-              text: deviceRow.modelData.name + (deviceRow.live ? "  (in use)" : "")
+              anchors.right: inUse.visible ? inUse.left : parent.right
+              anchors.rightMargin: inUse.visible ? Style.space(8) : 0
+              text: root.shortName(deviceRow.modelData.name)
               color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
