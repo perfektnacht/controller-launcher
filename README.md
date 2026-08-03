@@ -204,8 +204,41 @@ that list falls back to `mode` rather than leaving you without a wheel. The
 setting is stored in `shell.json` alongside the bar widget, so it survives
 restarts; remove the key to go back to the default.
 
-The cancel button (Circle / B) and which controller is used are not
-configurable yet.
+The cancel button (Circle / B) is not configurable yet.
+
+### The controller
+
+By default the daemon chooses: the first evdev gamepad it finds, and only if
+none answered, a Steam Controller puck. With one controller on the desk there
+is nothing to decide.
+
+With more than one, right-click the bar widget. The menu lists every controller
+attached right now, marks the one currently driving the wheel, and pins
+whichever you pick:
+
+```
+Controller
+ ● Automatic
+ ○ Sony Interactive Entertainment DualSense Wireless Controller  (in use)
+ ○ Valve Software Steam Controller Puck
+ ─────────────────────────────────────
+ Open the wheel
+```
+
+A pin is stored in `shell.json` next to `summonButton` and survives restarts,
+so a controller you keep on the desk stays chosen. **Automatic** clears it. The
+daemon restarts on the spot either way, the same as changing the summon button.
+
+The same list is available from a terminal, which is also how you find a device
+path by hand:
+
+```bash
+~/.config/omarchy/plugins/perfektnacht.controller-launcher/bin/omarchy-controller-launcherd --list-devices
+```
+
+A pinned controller that is switched off simply reads as no controller, rather
+than as a connected one that never responds. Nothing falls back to a different
+device behind your back: pinning means that controller or none.
 
 ## Controller support
 

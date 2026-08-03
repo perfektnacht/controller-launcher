@@ -492,6 +492,29 @@ def find_gamepad(preferred=None):
     return SteamPuck.discover()
 
 
+def list_devices():
+    """Every controller that could drive the wheel, for the bar's picker.
+
+    Safe to run while a daemon is holding one of these: a grab is exclusive
+    over events, not over opening, and each open of a hidraw node gets its own
+    report queue -- so probing here cannot take input away from the daemon.
+    """
+    found = []
+    for path in sorted(glob.glob("/dev/input/event*")):
+        pad = Gamepad.probe(path)
+        if pad:
+            found.append({"path": path, "name": pad.name, "kind": "gamepad"})
+            pad.close()
+    # Listed separately, and only the streaming one: every puck interface
+    # advertises the report, so probing alone would offer five identical
+    # entries of which four are dead.
+    puck = SteamPuck.discover()
+    if puck:
+        found.append({"path": puck.path, "name": puck.name, "kind": "puck"})
+        puck.close()
+    return found
+
+
 class Daemon:
     AIM_INTERVAL = 1.0 / 60.0
 
@@ -661,17 +684,15 @@ class Daemon:
 def main():
     args = sys.argv[1:]
     if "--list-devices" in args:
-        for path in sorted(glob.glob("/dev/input/event*")):
-            pad = Gamepad.probe(path)
-            if pad:
-                print("%s  %s" % (path, pad.name))
-                pad.close()
-        # Listed separately: every puck interface advertises the report, so
-        # say which one a controller is actually live on rather than all five.
-        puck = SteamPuck.discover()
-        if puck:
-            print("%s  %s (streaming)" % (puck.path, puck.name))
-            puck.close()
+        found = list_devices()
+        # The bar's controller picker reads this, so it has a machine-readable
+        # form; the plain one stays the default for anyone running it by hand.
+        if "--json" in args:
+            print(json.dumps(found))
+            return 0
+        for entry in found:
+            suffix = " (streaming)" if entry["kind"] == "puck" else ""
+            print("%s  %s%s" % (entry["path"], entry["name"], suffix))
         return 0
 
     summon = "mode"

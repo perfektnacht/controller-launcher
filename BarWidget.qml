@@ -3,8 +3,8 @@ import qs.Commons
 import qs.Ui
 
 // Arm/disarm toggle and the honest answer to "is this thing intercepting my
-// controller right now?". Left click toggles capture, right click opens the
-// wheel without one.
+// controller right now?". Left click toggles capture, right click opens a menu
+// holding the controller picker and the wheel itself.
 BarWidget {
   id: root
   moduleName: "perfektnacht.controller-launcher"
@@ -23,6 +23,22 @@ BarWidget {
   readonly property bool armed: wheelService ? wheelService.armed === true : false
   readonly property bool connected: wheelService ? wheelService.connected === true : false
   readonly property string deviceName: wheelService ? String(wheelService.deviceName || "") : ""
+  readonly property string devicePath: wheelService ? String(wheelService.devicePath || "") : ""
+  readonly property string pinnedDevice: wheelService ? String(wheelService.configuredDevice || "") : ""
+  readonly property var devices: wheelService && Array.isArray(wheelService.devices)
+    ? wheelService.devices : []
+
+  readonly property color foreground: Color.popups.text
+  readonly property string fontFamily: Style.font.family
+
+  property bool menuOpen: false
+
+  // PopupCard routes its own dismissal -- an outside click clearing Hyprland's
+  // focus grab -- through owner.close(). Without this it would assign to its
+  // `open` binding instead, breaking the binding and leaving the menu stuck.
+  function close() {
+    root.menuOpen = false
+  }
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
@@ -46,8 +62,139 @@ BarWidget {
 
     onPressed: function(pressedButton) {
       if (!root.wheelService) return
-      if (pressedButton === Qt.LeftButton) root.wheelService.toggleArmed()
-      else if (pressedButton === Qt.RightButton) root.wheelService.showWheel()
+      if (pressedButton === Qt.LeftButton) {
+        root.wheelService.toggleArmed()
+      } else if (pressedButton === Qt.RightButton) {
+        // Probed on open rather than held live, so the list reflects what is
+        // switched on right now instead of what was there at shell start.
+        if (!root.menuOpen) root.wheelService.refreshDevices()
+        root.menuOpen = !root.menuOpen
+      }
+    }
+  }
+
+  // KeyboardPanel rather than PopupCard: the bar's own surface takes
+  // WlrKeyboardFocus.None, so a popup parented to it never sees a key press
+  // and Escape would do nothing. This owns a focused layer surface instead,
+  // which is what every panel in the shell that closes on Escape uses.
+  KeyboardPanel {
+    id: menu
+    anchorItem: root
+    owner: root
+    bar: root.bar
+    open: root.menuOpen
+    focusTarget: keyCatcher
+    contentWidth: menu.fittedContentWidth(Style.space(300))
+    contentHeight: menu.fittedContentHeight(menuColumn.implicitHeight)
+
+    PanelKeyCatcher {
+      id: keyCatcher
+      anchors.fill: parent
+
+      onCloseRequested: root.close()
+
+      Column {
+        id: menuColumn
+        anchors.fill: parent
+        spacing: Style.space(8)
+
+        Text {
+          text: "Controller"
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+          font.bold: true
+        }
+
+        Text {
+          visible: root.devices.length === 0
+          text: "No controllers found."
+          color: Qt.darker(root.foreground, 1.5)
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          font.italic: true
+        }
+
+        // Automatic first, then one row per controller. Automatic is not a
+        // device, so it carries the empty path that clears the setting.
+        Repeater {
+          model: {
+            var rows = [{ path: "", name: "Automatic", kind: "auto" }]
+            for (var i = 0; i < root.devices.length; i++) rows.push(root.devices[i])
+            return rows
+          }
+
+          delegate: Item {
+            id: deviceRow
+            required property var modelData
+            width: menuColumn.width
+            implicitHeight: Style.space(28)
+
+            readonly property string path: String(modelData.path || "")
+            readonly property bool chosen: root.pinnedDevice === deviceRow.path
+            // Which one is actually driving the wheel, which is only the same as
+            // the chosen one when something is pinned and it turned up.
+            readonly property bool live: deviceRow.path !== ""
+              && root.devicePath === deviceRow.path
+
+            Text {
+              id: mark
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.left: parent.left
+              width: Style.space(18)
+              text: deviceRow.chosen ? "●" : "○"
+              color: deviceRow.chosen ? Color.accent : Qt.darker(root.foreground, 1.5)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.left: mark.right
+              anchors.right: parent.right
+              text: deviceRow.modelData.name + (deviceRow.live ? "  (in use)" : "")
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: {
+                if (root.wheelService) root.wheelService.selectDevice(deviceRow.path)
+                root.menuOpen = false
+              }
+            }
+          }
+        }
+
+        PanelSeparator { width: menuColumn.width }
+
+        Item {
+          width: menuColumn.width
+          implicitHeight: Style.space(28)
+
+          Text {
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.left: parent.left
+            text: "Open the wheel"
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+
+          MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+              root.menuOpen = false
+              if (root.wheelService) root.wheelService.showWheel()
+            }
+          }
+        }
+      }
     }
   }
 }

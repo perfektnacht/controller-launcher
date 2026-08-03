@@ -22,9 +22,15 @@ Item {
   property bool armed: false
   property bool connected: false
   property string deviceName: ""
+  property string devicePath: ""
   property string summonButton: "mode"
 
   property var launchers: []
+
+  // Everything the picker can offer, refreshed when the menu opens rather than
+  // held live: probing every evdev node is not something to do on a timer for
+  // a list nobody is looking at.
+  property var devices: []
 
   // ------------------------------------------------------------- the setting
 
@@ -38,6 +44,12 @@ Item {
     var wanted = root.settingValue("summonButton")
     return root.summonChoices.indexOf(wanted) !== -1 ? wanted : "mode"
   }
+
+  // Empty means automatic, which is both the default and what the picker's
+  // first entry restores. Stored like summonButton rather than kept for the
+  // session: which controller is on your desk changes far less often than
+  // whether you want the wheel armed.
+  readonly property string configuredDevice: root.settingValue("device")
 
   // Bar widgets are handed their shell.json entry as `settings`; services are
   // not, so read the same entry the bar widget would. Layout first, then the
@@ -108,13 +120,15 @@ Item {
 
   function startDaemon() {
     if (root.pluginDir === "" || daemon.running) return
-    daemon.command = [root.pluginDir + "/bin/omarchy-controller-launcherd",
-                      "--summon", root.configuredSummon]
+    var argv = [root.pluginDir + "/bin/omarchy-controller-launcherd",
+                "--summon", root.configuredSummon]
+    if (root.configuredDevice !== "") argv.push("--device", root.configuredDevice)
+    daemon.command = argv
     daemon.running = true
   }
 
-  // The daemon reads --summon once at startup, so a changed setting only
-  // reaches it through a restart.
+  // The daemon reads --summon and --device once at startup, so a changed
+  // setting only reaches it through a restart.
   property bool restartingForSetting: false
 
   // Capture is deliberate and per-session. Editing a setting is not a request
@@ -122,7 +136,7 @@ Item {
   // daemon reports for duty.
   property bool rearmAfterRestart: false
 
-  onConfiguredSummonChanged: {
+  function restartForSetting() {
     if (!daemon.running) {
       startDaemon()
       return
@@ -130,6 +144,19 @@ Item {
     root.rearmAfterRestart = root.armed
     root.restartingForSetting = true
     daemon.running = false
+  }
+
+  onConfiguredSummonChanged: root.restartForSetting()
+  onConfiguredDeviceChanged: root.restartForSetting()
+
+  // Which controller to drive the wheel with. Empty hands it back to the
+  // daemon's own preference order. Persisted through the same path the bar
+  // widget's other settings take, so it survives a restart.
+  function selectDevice(path) {
+    if (!root.shell || !root.shell.pluginRegistry) return
+    var error = root.shell.pluginRegistry.setBarWidget(
+      root.pluginId, "device", String(path || ""), {})
+    if (error) console.warn("controller-launcher: " + error)
   }
 
   // The shell injects `manifest` after createObject, so pluginDir arrives one
@@ -202,6 +229,7 @@ Item {
     case "device":
       root.connected = event.connected === true
       if (event.name) root.deviceName = String(event.name)
+      root.devicePath = root.connected ? String(event.path || "") : ""
       if (!root.connected) root.hideWheel()
       break
 
@@ -289,5 +317,39 @@ Item {
     discovery.collected = ""
     discovery.command = [root.pluginDir + "/bin/omarchy-controller-launcher-launchers"]
     discovery.running = true
+  }
+
+  // --------------------------------------------------------------- devices
+
+  Process {
+    id: deviceScan
+    property string collected: ""
+
+    stdout: SplitParser {
+      onRead: function(line) { deviceScan.collected += line + "\n" }
+    }
+    onExited: function(code) {
+      var raw = deviceScan.collected
+      deviceScan.collected = ""
+      if (code !== 0) return
+      try {
+        var parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) root.devices = parsed
+      } catch (error) {
+        console.warn("controller-launcher: device list returned invalid JSON")
+      }
+    }
+  }
+
+  // Runs the daemon's own lister in a second process rather than asking the
+  // running daemon: a grab is exclusive over events and not over opening, and
+  // each hidraw open has its own report queue, so this cannot take input away
+  // from the daemon holding a controller.
+  function refreshDevices() {
+    if (deviceScan.running || root.pluginDir === "") return
+    deviceScan.collected = ""
+    deviceScan.command = [root.pluginDir + "/bin/omarchy-controller-launcherd",
+                          "--list-devices", "--json"]
+    deviceScan.running = true
   }
 }
