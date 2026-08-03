@@ -130,8 +130,9 @@ Item {
       if (!root.connected) root.hideWheel()
       break
 
+    // No refresh here: Wheel.open() asks for one, which covers this summon
+    // and every other entry point rather than just the controller button.
     case "summon":
-      root.refreshLaunchers()
       root.showWheel()
       break
 

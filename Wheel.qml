@@ -164,6 +164,15 @@ Item {
     root.aimY = 0
     root.aborting = false
     root.refreshLaunchers(payloadJson)
+
+    // Every way of summoning the wheel lands here -- the daemon's button, an
+    // IPC toggle, a keybind -- but only the daemon's used to ask the service
+    // to rescan. Asking from open() means all of them pick up an app
+    // installed since the last run. The result arrives after we are already
+    // on screen; the service hands it to us then.
+    var live = root.liveService()
+    if (live && typeof live.refreshLaunchers === "function") live.refreshLaunchers()
+
     root.opened = true
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
