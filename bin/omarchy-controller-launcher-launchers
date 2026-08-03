@@ -13,8 +13,39 @@
 # Entries keep their slot whether or not they are installed, because a radial
 # menu is only fast if positions never move. Set "when" to "false" to hide a
 # default entry outright.
+#
+# --all emits the catalog instead: every entry including the hidden ones, each
+# carrying why it is in the state it is in. That is what a settings menu needs
+# in order to offer an entry you are not currently showing -- the wheel's own
+# list has already dropped those, so it can only ever take entries away.
 
 set -uo pipefail
+
+catalog=false
+
+usage() {
+  cat <<'EOF'
+Usage: omarchy-controller-launcher-launchers [--all]
+
+  (no flags)  entries the wheel should draw, in order
+  --all       every known entry, plus `hidden` and `toggleable`
+EOF
+}
+
+for arg in "$@"; do
+  case "$arg" in
+  --all | --catalog) catalog=true ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    echo "unknown option: $arg" >&2
+    usage >&2
+    exit 1
+    ;;
+  esac
+done
 
 plugin_dir=$(dirname "$(dirname "$(readlink -f "$0")")")
 defaults="$plugin_dir/launchers.json"
@@ -32,9 +63,34 @@ fi
 # pass to build the array. Keeps `when` out of jq and jq out of bash's way.
 entries=()
 states=()
+hiddens=()
+toggleables=()
 while IFS= read -r id; do
   when=$(jq -r --arg id "$id" '.[$id].when // "true"' <<<"$merged")
-  bash -c "$when" >/dev/null 2>&1 || continue
+
+  if bash -c "$when" >/dev/null 2>&1; then
+    hidden=false
+  else
+    hidden=true
+  fi
+
+  # Whether a menu can flip this entry by rewriting `when` alone. A literal
+  # guard carries no information beyond the answer it already gave, so
+  # overwriting it loses nothing. An expression -- "! omarchy-pkg-present foo",
+  # a path test -- is someone's stated intent about when the entry belongs on
+  # the wheel, and stamping "false" over it silently throws that away. Those
+  # are reported as locked so a caller has to leave them alone.
+  case "$when" in
+  true | false) toggleable=true ;;
+  *) toggleable=false ;;
+  esac
+
+  # The wheel's list stops at the guard. The catalog carries hidden entries
+  # through, so a menu can say "Prism, off, and not installed either" rather
+  # than offering a slot that would come up inert.
+  if [[ $hidden == true && $catalog == false ]]; then
+    continue
+  fi
 
   installed=$(jq -r --arg id "$id" '.[$id].installed // "true"' <<<"$merged")
   if bash -c "$installed" >/dev/null 2>&1; then
@@ -43,6 +99,8 @@ while IFS= read -r id; do
     states+=("false")
   fi
   entries+=("$id")
+  hiddens+=("$hidden")
+  toggleables+=("$toggleable")
 done < <(jq -r 'keys_unsorted[]' <<<"$merged")
 
 if ((${#entries[@]} == 0)); then
@@ -54,20 +112,29 @@ fi
 # records so nothing has to be escaped by hand.
 ids_json=$(printf '%s\n' "${entries[@]}" | jq -R . | jq -s .)
 states_json=$(printf '%s\n' "${states[@]}" | jq -s .)
+hiddens_json=$(printf '%s\n' "${hiddens[@]}" | jq -s .)
+toggleables_json=$(printf '%s\n' "${toggleables[@]}" | jq -s .)
 
-jq -n --argjson all "$merged" --argjson ids "$ids_json" --argjson states "$states_json" '
+# Without --all the output is byte for byte what it has always been: this runs
+# on every summon, and the wheel is not the place to find out that a field moved.
+jq -n --argjson all "$merged" --argjson ids "$ids_json" --argjson states "$states_json" \
+  --argjson hiddens "$hiddens_json" --argjson toggleables "$toggleables_json" \
+  --argjson catalog "$catalog" '
   [range(0; $ids | length)]
-  | map($ids[.] as $id | $all[$id] + {id: $id, installed: $states[.]})
-  | map({
-      id,
-      label: (.label // .id),
-      sublabel: (.sublabel // ""),
-      icon: (.icon // ""),
-      glyph: (.glyph // ""),
-      accent: (.accent // ""),
-      media: (.media // .id),
-      installed,
-      action: (.action // ""),
-      install: (.install // "")
-    })
+  | map(. as $i | $ids[$i] as $id | $all[$id] + {id: $id, installed: $states[$i]}
+      | {
+          id,
+          label: (.label // .id),
+          sublabel: (.sublabel // ""),
+          icon: (.icon // ""),
+          glyph: (.glyph // ""),
+          accent: (.accent // ""),
+          media: (.media // .id),
+          installed,
+          action: (.action // ""),
+          install: (.install // "")
+        }
+      + (if $catalog
+         then { hidden: $hiddens[$i], toggleable: $toggleables[$i] }
+         else {} end))
 '
