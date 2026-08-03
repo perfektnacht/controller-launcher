@@ -49,8 +49,13 @@ Item {
   // The theme's menu scrim is tuned for a small card on a busy desktop. This
   // covers the whole screen and is meant to read as a mode you entered, so it
   // keeps the theme's hue but enforces a floor on the dim.
+  //
+  // The floor is high because the wedges are a thin wash rather than solid
+  // cards: whatever the scrim leaves of the wallpaper comes through them at
+  // nearly full strength, and a patterned wallpaper behind the ring drowns
+  // the tone steps that tell one wedge from the next.
   readonly property color scrimFill: Qt.rgba(root.scrim.r, root.scrim.g, root.scrim.b,
-                                             Math.max(root.scrim.a, 0.72))
+                                             Math.max(root.scrim.a, 0.92))
 
   // Everything is a proportion of the shorter screen edge rather than a fixed
   // size. Gaming mode should own the display, and a 13" laptop gets the same
@@ -148,7 +153,7 @@ Item {
     // in-between step so that seam survives too.
     var odd = (root.count % 2 === 1) && (index === root.count - 1)
     var step = odd ? 2 : (index % 2)
-    var band = installed ? [0.16, 0.115, 0.138] : [0.055, 0.03, 0.043]
+    var band = installed ? [0.20, 0.135, 0.168] : [0.075, 0.04, 0.058]
     return Qt.rgba(root.outline.r, root.outline.g, root.outline.b, band[step])
   }
 
