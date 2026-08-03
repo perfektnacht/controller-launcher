@@ -214,11 +214,17 @@ well-behaved evdev gamepad, so there is nothing to reverse engineer. The input
 layer is generic evdev, so most gamepads should work; the daemon takes the
 first node with a south face button and a left stick.
 
-**Steam Controller — works, without Steam running.** The puck (`28de:1304`) is
-not in `hid-steam`'s device table, which claims only `1102`, `1142` and `1205`.
-So all five of its interfaces fall through to `hid-generic`, the kernel
-publishes no gamepad, and what you get is the controller's own firmware
-emulation — lizard mode, four "Puck Mouse" and four "Puck Keyboard" nodes.
+**Steam Controller — works, without Steam running.** That qualifier is the
+whole caveat: while Steam is up, the Steam button belongs to Steam. Pressing it
+opens Big Picture Mode, and although the wheel is summoned alongside it, the
+stick no longer reaches the wheel — the selection stays at centre and there is
+nothing to release onto. Quit Steam and the wheel behaves normally.
+
+The puck (`28de:1304`) is not in `hid-steam`'s device table, which claims only
+`1102`, `1142` and `1205`. So all five of its interfaces fall through to
+`hid-generic`, the kernel publishes no gamepad, and what you get is the
+controller's own firmware emulation — lizard mode, four "Puck Mouse" and four
+"Puck Keyboard" nodes.
 
 The controller volunteers its real state regardless: the vendor collection
 streams a 53-byte input report `0x42` at about 270Hz whether or not anything
@@ -252,7 +258,9 @@ streaming. A slot with no controller on it stays silent.
   Heroic's store JSON) is the obvious next ring and would skip launcher UIs
   entirely.
 - The summon button is shared with Steam, which grabs the PS button while it is
-  running. Move it with `summonButton` above if that bites.
+  running. On a Steam Controller the wheel still appears, but Big Picture Mode
+  opens with it and takes the stick, so no selection can be made. Close Steam to
+  use the wheel properly.
 
 ## Bundled art
 
