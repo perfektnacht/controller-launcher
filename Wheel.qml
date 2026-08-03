@@ -186,6 +186,9 @@ Item {
 
   // The service keeps the discovered list; the summon payload is only a
   // fallback for callers that hand us one directly (an IPC summon, say).
+  //
+  // Also called by the service while the wheel is open, when discovery comes
+  // back with a list that differs from the one we opened with.
   function refreshLaunchers(payloadJson) {
     var live = root.liveService()
     if (live && Array.isArray(live.launchers) && live.launchers.length > 0) {

@@ -73,6 +73,11 @@ Item {
     daemon.write(command + "\n")
   }
 
+  // Arming is the dependable beat before a summon, and it costs a handful of
+  // `command -v` calls. Refreshing here means the first wheel of a session
+  // usually opens correct rather than correcting itself a frame later.
+  onArmedChanged: if (root.armed) refreshLaunchers()
+
   function arm() { send("arm") }
   function disarm() { send("disarm") }
   function toggleArmed() { send(root.armed ? "disarm" : "arm") }
@@ -166,6 +171,9 @@ Item {
   Process {
     id: discovery
     property string collected: ""
+    // Raw output of the last run that we accepted, so an unchanged result can
+    // be dropped before it touches root.launchers.
+    property string signature: ""
 
     stdout: SplitParser {
       onRead: function(line) { discovery.collected += line + "\n" }
@@ -174,12 +182,29 @@ Item {
       var raw = discovery.collected
       discovery.collected = ""
       if (code !== 0) return
+
+      // Nothing installed or removed since the last run, which is the common
+      // case. Reassigning would rebuild every wedge delegate for no change.
+      if (raw === discovery.signature) return
+
+      var parsed
       try {
-        var parsed = JSON.parse(raw)
-        if (Array.isArray(parsed)) root.launchers = parsed
+        parsed = JSON.parse(raw)
       } catch (error) {
         console.warn("gamepad-wheel: launcher discovery returned invalid JSON")
+        return
       }
+      if (!Array.isArray(parsed)) return
+
+      discovery.signature = raw
+      root.launchers = parsed
+
+      // The wheel takes its copy of the list when it opens, and the discovery
+      // we start on summon lands a beat after that. Hand the result to the
+      // wheel already on screen, or the first summon after installing
+      // something keeps showing it greyed out.
+      var wheel = root.wheelItem()
+      if (wheel && typeof wheel.refreshLaunchers === "function") wheel.refreshLaunchers()
     }
   }
 
