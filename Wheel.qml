@@ -308,6 +308,12 @@ Item {
             antialiasing: true
             asynchronous: false
 
+            // The default renderer triangulates the path, which leaves the
+            // outer arc visibly stair-stepped at this radius -- `antialiasing`
+            // alone does not smooth it. CurveRenderer keeps the curves as
+            // curves and antialiases them analytically on the GPU.
+            preferredRendererType: Shape.CurveRenderer
+
             readonly property bool selected: root.selectedIndex === wedge.index
             readonly property bool installed: root.isInstalled(wedge.modelData)
             readonly property color accent: root.accentFor(wedge.modelData)
