@@ -1,0 +1,149 @@
+#!/bin/bash
+
+# Switches one wheel entry on or off by writing `when` into the user's
+# extensions file, and prints the state it settled on.
+#
+#   omarchy-controller-launcher-toggle battlenet off
+#   omarchy-controller-launcher-toggle prismlauncher flip
+#
+# The file belongs to whoever has been hand-editing it, and this has to write
+# into the middle of that without disturbing the rest. Three rules keep it
+# honest:
+#
+#   Never overwrite what it cannot parse. A file that fails `jq` is far more
+#   likely to be a config being edited than one worth replacing, and the
+#   overwrite is the one mistake here with nothing to undo it.
+#
+#   Never write over an expression. `when` doubles as a place to say when an
+#   entry belongs on the wheel at all -- "! omarchy-pkg-present foo" -- and a
+#   literal stamped over that is someone's rule gone with no trace. The reader
+#   reports those as toggleable:false; this refuses them again rather than
+#   trusting a caller to have looked.
+#
+#   Prefer removing the override to writing one. Switching an entry back to
+#   what it ships as drops the key instead of pinning "true" over it, so a
+#   file only carries the decisions that actually differ from the defaults.
+
+set -uo pipefail
+
+# 1 usage, 2 unknown entry, 3 locked by an expression guard, 4 unreadable config
+readonly EXIT_USAGE=1
+readonly EXIT_UNKNOWN=2
+readonly EXIT_LOCKED=3
+readonly EXIT_CONFIG=4
+
+usage() {
+  cat <<'EOF'
+Usage: omarchy-controller-launcher-toggle <id> <on|off|flip>
+
+Prints {"id":...,"hidden":...} on success.
+
+  1  bad usage        2  no such entry
+  3  entry is guarded by an expression, not a literal
+  4  the extensions file is not readable as JSON
+EOF
+}
+
+die() {
+  local code=$1
+  shift
+  echo "omarchy-controller-launcher-toggle: $*" >&2
+  exit "$code"
+}
+
+[[ $# -eq 2 ]] || {
+  usage >&2
+  exit $EXIT_USAGE
+}
+
+id=$1
+want=$2
+case "$want" in
+on | off | flip) ;;
+*)
+  usage >&2
+  exit $EXIT_USAGE
+  ;;
+esac
+
+plugin_dir=$(dirname "$(dirname "$(readlink -f "$0")")")
+defaults_file="$plugin_dir/launchers.json"
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/extensions"
+user_file="$config_dir/gamepad-wheel.json"
+
+[[ -f $defaults_file ]] || die $EXIT_CONFIG "no launchers.json at $defaults_file"
+jq -e . "$defaults_file" >/dev/null 2>&1 ||
+  die $EXIT_CONFIG "launchers.json is not valid JSON"
+defaults=$(cat "$defaults_file")
+
+mkdir -p "$config_dir" || die $EXIT_CONFIG "cannot create $config_dir"
+
+# Held across the read and the write both. Two menu clicks in flight at once
+# would otherwise each read the file before either had written, and the second
+# would land on top of the first with no sign the first ever happened.
+exec 9>"$config_dir/.gamepad-wheel.lock" || die $EXIT_CONFIG "cannot open the lock file"
+flock 9 || die $EXIT_CONFIG "cannot take the lock"
+
+if [[ -f $user_file ]]; then
+  jq -e . "$user_file" >/dev/null 2>&1 ||
+    die $EXIT_CONFIG "$user_file is not valid JSON -- fix it first, refusing to overwrite"
+  user=$(cat "$user_file")
+else
+  user='{}'
+fi
+
+merged=$(jq -n --argjson d "$defaults" --argjson u "$user" '$d * $u') ||
+  die $EXIT_CONFIG "cannot merge the defaults with $user_file"
+
+# An id in neither file would be written as an entry holding nothing but a
+# `when`, which the wheel would draw as a wedge with no label and no action.
+jq -e --arg id "$id" 'has($id)' <<<"$merged" >/dev/null ||
+  die $EXIT_UNKNOWN "no entry called '$id'"
+
+current=$(jq -r --arg id "$id" '.[$id].when // "true"' <<<"$merged")
+case "$current" in
+true | false) ;;
+*) die $EXIT_LOCKED "'$id' is guarded by an expression, leaving it alone: $current" ;;
+esac
+
+case "$want" in
+on) desired=true ;;
+off) desired=false ;;
+flip) [[ $current == true ]] && desired=false || desired=true ;;
+esac
+
+# What the entry does with no override at all. Only a literal here can be
+# reached by removing the key -- if the plugin ships an expression, the
+# override has to stay and say so outright.
+shipped=$(jq -r --arg id "$id" '.[$id].when // "true"' <<<"$defaults")
+
+if [[ $shipped == "$desired" ]]; then
+  # Back to how it ships. Drop `when`, then drop the entry itself if that was
+  # the only thing the user had to say about it -- but not before, or a
+  # hand-written entry would be deleted for being switched on.
+  updated=$(jq --arg id "$id" '
+    if has($id) then .[$id] |= del(.when) else . end
+    | if (has($id) and (.[$id] | length) == 0) then del(.[$id]) else . end
+  ' <<<"$user")
+else
+  updated=$(jq --arg id "$id" --arg w "$desired" '
+    .[$id] = ((.[$id] // {}) + {when: $w})
+  ' <<<"$user")
+fi
+[[ -n $updated ]] || die $EXIT_CONFIG "failed to rewrite the entry"
+
+# Written beside the target so the rename cannot cross a filesystem, which is
+# what makes it atomic: a reader sees the old file or the new one, and a crash
+# halfway through leaves the old one whole.
+tmp=$(mktemp "$config_dir/.gamepad-wheel.json.XXXXXX") ||
+  die $EXIT_CONFIG "cannot create a temporary file in $config_dir"
+trap 'rm -f "$tmp"' EXIT
+
+printf '%s\n' "$updated" >"$tmp" || die $EXIT_CONFIG "cannot write $tmp"
+jq -e . "$tmp" >/dev/null 2>&1 || die $EXIT_CONFIG "refusing to install unparseable output"
+chmod 644 "$tmp"
+mv -f "$tmp" "$user_file" || die $EXIT_CONFIG "cannot replace $user_file"
+trap - EXIT
+
+jq -n --arg id "$id" --argjson hidden "$([[ $desired == true ]] && echo false || echo true)" \
+  '{id: $id, hidden: $hidden}'
