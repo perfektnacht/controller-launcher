@@ -107,21 +107,34 @@ of which `omarchy plugin remove` cleans up.
 ## Install
 
 ```bash
-ln -s "$PWD" ~/.config/omarchy/plugins/perfektnacht.controller-launcher
-omarchy-shell shell rescanPlugins
-omarchy plugin enable perfektnacht.controller-launcher right
+omarchy plugin add https://github.com/perfektnacht/controller-launcher --enable
+```
+
+That clones the repository into `~/.config/omarchy/plugins/`, then asks whether
+to place the bar widget left, center, or right, preselected to `right`; `--yes`
+takes `right` without asking. The install directory is named from the manifest's
+`id`, not from the repository, so it lands at
+`~/.config/omarchy/plugins/perfektnacht.controller-launcher` — the shell will
+not find the plugin if the two disagree.
+
+To update later:
+
+```bash
+omarchy plugin update perfektnacht.controller-launcher
 omarchy restart shell
 ```
+
+`omarchy plugin update` pulls and rescans, but entry points are read when the
+shell starts, so the restart is what actually loads changed QML.
 
 The bar widget shows a controller glyph — dim when passive, bright when
 capturing. Left click toggles capture; right click opens the wheel without a
 controller.
 
-To see QML errors live, which `omarchy restart shell` swallows:
+To remove it again:
 
 ```bash
-quickshell kill -p /usr/share/omarchy/shell --any-display
-quickshell -n -p /usr/share/omarchy/shell
+omarchy plugin remove perfektnacht.controller-launcher
 ```
 
 ## Configuration
@@ -159,9 +172,9 @@ Wheel order follows key order. The fields:
 | `media` | basename in `media/`, defaults to the entry id; `""` skips to the glyph |
 | `glyph` | nerd-font fallback |
 
-The daemon takes `--summon` and `--cancel` (one of `south`, `east`, `north`,
-`west`, `select`, `start`, `mode`), plus `--device` to pin a specific evdev
-node and `--list-devices` to see what it would pick.
+The summon button, the cancel button, and which controller is used are not
+configurable yet. The plugin launches its daemon with defaults: summon on
+PS / Guide / Steam, cancel on Circle / B, and the first gamepad it finds.
 
 ## Controller support
 
@@ -189,12 +202,13 @@ watchdog rather than cleanup-on-exit, and it is deliberately not in v1.
   Heroic's store JSON) is the obvious next ring and would skip launcher UIs
   entirely.
 - The summon button is shared with Steam, which grabs the PS button while it is
-  running. Change it with `--summon` if that bites.
+  running. There is no setting to move it yet, so the wheel may not summon while
+  Steam has the controller.
 
 ## Bundled art
 
 `media/` holds each launcher's logo so uninstalled entries still look like
-themselves. Sources, all fetched at build time and rasterised to 256px PNG:
+themselves. Sources:
 
 - `steam`, `minecraft`, `geforce-now`, `xbox-cloud` —
   [homarr-labs/dashboard-icons](https://github.com/homarr-labs/dashboard-icons),
@@ -203,11 +217,6 @@ themselves. Sources, all fetched at build time and rasterised to 256px PNG:
 - `lutris` — the Lutris repo
 - `battlenet`, `retroarch` — [simple-icons](https://simpleicons.org), tinted to
   each entry's accent
-
-The SVG-sourced ones are rasterised with `rsvg-convert -w 512 -h 512`, not with
-ImageMagick's `-resize`. ImageMagick renders an SVG at its intrinsic viewBox
-size first and then scales that bitmap, so a 24×24 simple-icons source came out
-visibly soft; rsvg renders the vector at the target size instead.
 
 These are the applications' own marks, included to identify them. They belong
 to their respective owners.
