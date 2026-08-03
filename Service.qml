@@ -13,7 +13,7 @@ Item {
   property var shell: null
   property var manifest: null
 
-  readonly property string pluginId: "perfektnacht.gamepad-wheel"
+  readonly property string pluginId: "perfektnacht.controller-launcher"
   readonly property string pluginDir: (manifest && manifest.__sourceDir) ? String(manifest.__sourceDir) : ""
 
   // Mirrors of the daemon's state. The daemon is the source of truth for all
@@ -42,7 +42,7 @@ Item {
     stderr: SplitParser {
       onRead: function(line) {
         var text = String(line || "").trim()
-        if (text) console.warn("gamepad-wheel: " + text)
+        if (text) console.warn("controller-launcher: " + text)
       }
     }
 
@@ -57,7 +57,7 @@ Item {
 
   function startDaemon() {
     if (root.pluginDir === "" || daemon.running) return
-    daemon.command = [root.pluginDir + "/bin/omarchy-gamepad-wheeld"]
+    daemon.command = [root.pluginDir + "/bin/omarchy-controller-launcherd"]
     daemon.running = true
   }
 
@@ -112,7 +112,7 @@ Item {
     try {
       event = JSON.parse(text)
     } catch (error) {
-      console.warn("gamepad-wheel: unparseable daemon line: " + text)
+      console.warn("controller-launcher: unparseable daemon line: " + text)
       return
     }
 
@@ -160,7 +160,7 @@ Item {
       break
 
     case "error":
-      console.warn("gamepad-wheel: " + String(event.msg || ""))
+      console.warn("controller-launcher: " + String(event.msg || ""))
       break
     }
   }
@@ -192,7 +192,7 @@ Item {
       try {
         parsed = JSON.parse(raw)
       } catch (error) {
-        console.warn("gamepad-wheel: launcher discovery returned invalid JSON")
+        console.warn("controller-launcher: launcher discovery returned invalid JSON")
         return
       }
       if (!Array.isArray(parsed)) return
@@ -212,7 +212,7 @@ Item {
   function refreshLaunchers() {
     if (discovery.running || root.pluginDir === "") return
     discovery.collected = ""
-    discovery.command = [root.pluginDir + "/bin/omarchy-gamepad-wheel-launchers"]
+    discovery.command = [root.pluginDir + "/bin/omarchy-controller-launcher-launchers"]
     discovery.running = true
   }
 }

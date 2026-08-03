@@ -24,7 +24,7 @@ Item {
   // reason; serviceFor() is only a fallback for a summon that beats injection.
   property var service: null
 
-  readonly property string pluginId: "perfektnacht.gamepad-wheel"
+  readonly property string pluginId: "perfektnacht.controller-launcher"
   property bool opened: false
 
   // Aim vector in screen space (y grows downward), -1..1 per axis.
@@ -250,7 +250,7 @@ Item {
     visible: root.opened
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
-    WlrLayershell.namespace: "omarchy-gamepad-wheel"
+    WlrLayershell.namespace: "omarchy-controller-launcher"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
     exclusionMode: ExclusionMode.Ignore

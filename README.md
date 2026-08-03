@@ -107,9 +107,9 @@ of which `omarchy plugin remove` cleans up.
 ## Install
 
 ```bash
-ln -s "$PWD" ~/.config/omarchy/plugins/perfektnacht.gamepad-wheel
+ln -s "$PWD" ~/.config/omarchy/plugins/perfektnacht.controller-launcher
 omarchy-shell shell rescanPlugins
-omarchy plugin enable perfektnacht.gamepad-wheel right
+omarchy plugin enable perfektnacht.controller-launcher right
 omarchy restart shell
 ```
 

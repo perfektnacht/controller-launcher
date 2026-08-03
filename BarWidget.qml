@@ -7,9 +7,9 @@ import qs.Ui
 // wheel without one.
 BarWidget {
   id: root
-  moduleName: "perfektnacht.gamepad-wheel"
+  moduleName: "perfektnacht.controller-launcher"
 
-  readonly property string pluginId: "perfektnacht.gamepad-wheel"
+  readonly property string pluginId: "perfektnacht.controller-launcher"
 
   // Writable: the shell assigns `service` on plugins that pair UI with a
   // service entry point. Falls back to a lookup when it does not.
