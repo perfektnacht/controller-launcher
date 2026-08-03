@@ -148,6 +148,13 @@ class Gamepad:
             fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
         except OSError:
             return None
+        # Every node that turns out not to be a gamepad has to give its
+        # descriptor back. A scan walks all of /dev/input/event*, and the loop
+        # rescans once a second while nothing is attached, so leaking the ones
+        # that do not match exhausts the process's descriptors within a minute
+        # -- after which os.open fails, no device can ever be found again, and
+        # the wheel simply stops answering.
+        adopted = False
         try:
             name_buf = array.array("B", bytes(256))
             fcntl.ioctl(fd, _EVIOCGNAME(256), name_buf, True)
@@ -172,10 +179,15 @@ class Gamepad:
                 fcntl.ioctl(fd, _EVIOCGABS(axis), info, True)
                 _value, minimum, maximum, _fuzz, flat, _res = struct.unpack("6i", info)
                 axes[axis] = (minimum, maximum, flat)
+            adopted = True
             return cls(path, fd, name, axes)
         except OSError:
-            os.close(fd)
             return None
+        finally:
+            # The Gamepad owns the descriptor once it exists; every other way
+            # out of here closes it.
+            if not adopted:
+                os.close(fd)
 
     def normalize(self, axis, raw):
         return normalize_axis(self.axes[axis], raw)
@@ -198,6 +210,11 @@ class Gamepad:
             if etype != EV_SYN:
                 events.append((etype, code, value))
         return events
+
+    def alive(self, _now):
+        # An evdev node disappears with its device, and read_events() reports
+        # that honestly, so there is nothing to time out here.
+        return True
 
     def set_grab(self, wanted):
         if wanted == self.grabbed:
@@ -238,6 +255,11 @@ class SteamPuck:
     # rest, measured at roughly +-500 of 32767.
     AXES = {ABS_X: (-32767, 32767, 600), ABS_Y: (-32767, 32767, 600)}
 
+    # A connected puck streams whether or not anyone is touching it, so silence
+    # means the controller is gone rather than idle. Generous next to the ~270Hz
+    # it actually arrives at: this only has to beat a scheduling hiccup.
+    SILENCE = 2.0
+
     def __init__(self, path, fd, name):
         self.path = path
         self.fd = fd
@@ -247,6 +269,7 @@ class SteamPuck:
         self.pressed = {}
         self.stick = [None, None]
         self.lizard_fds = []
+        self.last_report = time.monotonic()
 
     @classmethod
     def probe(cls, path):
@@ -273,6 +296,38 @@ class SteamPuck:
         except OSError:
             os.close(fd)
             return None
+
+    @classmethod
+    def probe_live(cls, path):
+        """A puck at `path`, but only if a controller is actually on it.
+
+        What `probe` alone cannot tell you: every slot answers the ioctls
+        whether or not a controller is attached to it. Pinning a specific puck
+        and then leaving that controller switched off would otherwise attach a
+        node that goes silent immediately, and the liveness timeout would drop
+        it two seconds later, over and over.
+        """
+        puck = cls.probe(path)
+        if not puck:
+            return None
+        if puck._streaming():
+            return puck
+        puck.close()
+        return None
+
+    def _streaming(self):
+        """Whether a 0x42 turns up in the time one is always due."""
+        try:
+            ready, _, _ = select.select([self.fd], [], [], 0.15)
+        except OSError:
+            return False
+        if not ready:
+            return False
+        try:
+            data = os.read(self.fd, 128)
+        except OSError:
+            return False
+        return bool(data) and data[0] == STEAM_REPORT_ID
 
     @classmethod
     def discover(cls):
@@ -327,8 +382,20 @@ class SteamPuck:
             if not report:
                 return None
             if len(report) >= STEAM_REPORT_LEN and report[0] == STEAM_REPORT_ID:
+                self.last_report = time.monotonic()
                 events.extend(self._decode(report))
         return events
+
+    def alive(self, now):
+        """False once the controller has stopped talking.
+
+        The dongle is what enumerates, not the controller, so powering a
+        controller off leaves this node open and readable -- it simply goes
+        quiet. Nothing errors and nothing reaches EOF, so without this the
+        daemon holds a dead node forever and never looks at the gamepad you
+        turned on instead.
+        """
+        return now - self.last_report < self.SILENCE
 
     def _decode(self, report):
         """One 0x42 report as evdev-shaped events, emitting only changes."""
@@ -415,7 +482,7 @@ class SteamPuck:
 def find_gamepad(preferred=None):
     """The device to drive the wheel: a real gamepad, else the Steam puck."""
     if preferred:
-        return Gamepad.probe(preferred) or SteamPuck.probe(preferred)
+        return Gamepad.probe(preferred) or SteamPuck.probe_live(preferred)
     for path in sorted(glob.glob("/dev/input/event*")):
         pad = Gamepad.probe(path)
         if pad:
@@ -558,6 +625,10 @@ class Daemon:
 
         while self.running:
             now = time.monotonic()
+            # A device that went quiet rather than away. Dropping it here is
+            # what lets the rescan below find the controller you switched to.
+            if self.pad and not self.pad.alive(now):
+                self.detach()
             if not self.pad and now >= next_scan:
                 next_scan = now + 1.0
                 self.attach()

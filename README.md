@@ -249,6 +249,14 @@ The puck has four wireless slots and every one of them advertises the report,
 so the daemon opens all of its interfaces and keeps whichever is actually
 streaming. A slot with no controller on it stays silent.
 
+Silence is also how the daemon notices a puck being switched off. What
+enumerates is the dongle, not the controller, so powering a controller down
+leaves the node open and readable — it simply stops delivering. Nothing errors
+and nothing reaches end of file. Since a connected puck streams whether or not
+it is being touched, two seconds of silence is taken as gone, and the daemon
+goes looking again. That is what lets you turn a Steam Controller off, switch a
+DualSense on, and have the wheel follow you across without a restart.
+
 ## Known limits
 
 - Battle.net has no controller navigation once it opens; it is a Wine window.
