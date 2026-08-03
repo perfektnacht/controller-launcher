@@ -319,6 +319,92 @@ Item {
     discovery.running = true
   }
 
+  // --------------------------------------------------------------- catalog
+
+  // Everything the wheel could draw, switched-off entries included. Kept apart
+  // from `launchers` because that list has already dropped whatever is hidden,
+  // so a menu built on it could only ever take entries away.
+  property var catalog: []
+
+  // Why the last toggle was refused. The script declines to touch a config it
+  // cannot parse or a guard someone wrote by hand, and a menu that swallowed
+  // that would just look like it had ignored the click.
+  property string catalogError: ""
+
+  // Which entry has a write in flight. The script takes a lock, so a second
+  // click would wait rather than race, but a row should stop accepting clicks
+  // it cannot reflect yet.
+  property string togglingId: ""
+
+  Process {
+    id: catalogScan
+    property string collected: ""
+
+    stdout: SplitParser {
+      onRead: function(line) { catalogScan.collected += line + "\n" }
+    }
+    onExited: function(code) {
+      var raw = catalogScan.collected
+      catalogScan.collected = ""
+      if (code !== 0) return
+      try {
+        var parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) root.catalog = parsed
+      } catch (error) {
+        console.warn("controller-launcher: catalog returned invalid JSON")
+      }
+    }
+  }
+
+  function refreshCatalog() {
+    if (catalogScan.running || root.pluginDir === "") return
+    catalogScan.collected = ""
+    catalogScan.command = [root.pluginDir + "/bin/omarchy-controller-launcher-launchers",
+                           "--all"]
+    catalogScan.running = true
+  }
+
+  // The script's exit codes, in the words the menu should use. Anything else
+  // is a bug in one of the two, so it says so plainly rather than guessing.
+  function toggleMessage(code, id) {
+    switch (code) {
+    case 2: return "No entry called " + id + "."
+    case 3: return "A rule in your config decides that one."
+    case 4: return "gamepad-wheel.json is not valid JSON."
+    default: return "Could not switch " + id + "."
+    }
+  }
+
+  Process {
+    id: toggle
+
+    stderr: SplitParser {
+      onRead: function(line) {
+        var text = String(line || "").trim()
+        if (text) console.warn("controller-launcher: " + text)
+      }
+    }
+
+    // Re-read the catalog either way. On success it is the new state; on a
+    // refusal it is the state that was there all along, which is exactly what
+    // the row should snap back to.
+    onExited: function(code) {
+      var id = root.togglingId
+      root.togglingId = ""
+      root.catalogError = (code === 0) ? "" : root.toggleMessage(code, id)
+      root.refreshCatalog()
+      if (code === 0) root.refreshLaunchers()
+    }
+  }
+
+  function toggleEntry(id) {
+    if (root.togglingId !== "" || toggle.running || root.pluginDir === "") return
+    root.togglingId = String(id)
+    toggle.command = [root.pluginDir + "/bin/omarchy-controller-launcher-toggle",
+                      String(id), "flip"]
+    toggle.running = true
+  }
+
   // --------------------------------------------------------------- devices
 
   Process {

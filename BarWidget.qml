@@ -28,6 +28,13 @@ BarWidget {
   readonly property var devices: wheelService && Array.isArray(wheelService.devices)
     ? wheelService.devices : []
 
+  readonly property var catalog: wheelService && Array.isArray(wheelService.catalog)
+    ? wheelService.catalog : []
+  readonly property string catalogError: wheelService
+    ? String(wheelService.catalogError || "") : ""
+  readonly property string togglingId: wheelService
+    ? String(wheelService.togglingId || "") : ""
+
   readonly property color foreground: Color.popups.text
   readonly property string fontFamily: Style.font.family
 
@@ -89,7 +96,12 @@ BarWidget {
       } else if (pressedButton === Qt.RightButton) {
         // Probed on open rather than held live, so the list reflects what is
         // switched on right now instead of what was there at shell start.
-        if (!root.menuOpen) root.wheelService.refreshDevices()
+        // Same for the catalog: the extensions file is editable by hand, and
+        // the menu should show what is in it now rather than at shell start.
+        if (!root.menuOpen) {
+          root.wheelService.refreshDevices()
+          root.wheelService.refreshCatalog()
+        }
         root.menuOpen = !root.menuOpen
       }
     }
@@ -202,6 +214,114 @@ BarWidget {
               onClicked: {
                 if (root.wheelService) root.wheelService.selectDevice(deviceRow.path)
                 root.menuOpen = false
+              }
+            }
+          }
+        }
+
+        PanelSeparator { width: menuColumn.width }
+
+        Text {
+          text: "On the wheel"
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+          font.bold: true
+        }
+
+        // Only ever shown after a click that did not take. The script refuses
+        // to touch a config it cannot parse or a guard someone wrote by hand,
+        // and swallowing that would read as the menu ignoring the click.
+        Text {
+          visible: root.catalogError !== ""
+          width: menuColumn.width
+          text: root.catalogError
+          color: Color.urgent
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          wrapMode: Text.WordWrap
+        }
+
+        // Every entry the wheel knows about, in wheel order, switched off ones
+        // included. Order is the catalog's, so an entry switched back on
+        // returns to the slot it always had instead of the end of the ring.
+        Repeater {
+          model: root.catalog
+
+          delegate: Item {
+            id: entryRow
+            required property var modelData
+            width: menuColumn.width
+            implicitHeight: Style.space(26)
+
+            readonly property string entryId: String(modelData.id || "")
+            readonly property bool shown: modelData.hidden !== true
+            readonly property bool installed: modelData.installed === true
+
+            // `when` holds an expression rather than a plain yes or no, so
+            // there is no way to flip this row without throwing away whatever
+            // rule the user wrote there. The script refuses these too -- this
+            // just stops the row from offering.
+            readonly property bool locked: modelData.toggleable === false
+
+            readonly property bool busy: root.togglingId === entryRow.entryId
+            readonly property bool actionable: !entryRow.locked && !entryRow.busy
+
+            // A check rather than the device list's filled circle: those rows
+            // are one-of-many and these are each independent, and the marks
+            // should not imply otherwise.
+            Text {
+              id: check
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.left: parent.left
+              width: Style.space(18)
+              text: entryRow.shown ? "󰄬" : ""
+              color: entryRow.locked ? Qt.darker(root.foreground, 1.5) : Color.accent
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            // Right-aligned and outside the eliding label, for the same reason
+            // the device rows keep "in use" out there.
+            Text {
+              id: note
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.right: parent.right
+              visible: entryRow.locked || !entryRow.installed
+              // Locked wins: it is the one that says the row will not respond,
+              // which matters more than whether the app is on disk.
+              text: entryRow.locked ? "rule" : "not installed"
+              color: Qt.darker(root.foreground, 1.6)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.left: check.right
+              anchors.right: note.visible ? note.left : parent.right
+              anchors.rightMargin: note.visible ? Style.space(8) : 0
+              text: String(entryRow.modelData.label || entryRow.entryId)
+              // Switched off is still a choice you can reverse, so those rows
+              // stay readable. Locked is dimmer because it will not respond.
+              color: entryRow.locked
+                ? Qt.darker(root.foreground, 1.8)
+                : (entryRow.shown ? root.foreground : Qt.darker(root.foreground, 1.4))
+              opacity: entryRow.busy ? 0.5 : 1.0
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              enabled: entryRow.actionable
+              cursorShape: entryRow.actionable ? Qt.PointingHandCursor : Qt.ArrowCursor
+              // The menu stays open: switching entries on and off is something
+              // you do a few of at once, and closing after each would make
+              // rearranging the wheel a series of trips to the bar.
+              onClicked: {
+                if (root.wheelService) root.wheelService.toggleEntry(entryRow.entryId)
               }
             }
           }
