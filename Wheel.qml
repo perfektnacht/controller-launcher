@@ -85,10 +85,24 @@ Item {
   // glyph, and several of those are missing from JetBrainsMono Nerd Font.
   // `media` defaults to the entry id; set it to "" for entries that are meant
   // to be a glyph, so we do not probe for a file that was never shipped.
+  // Taken from the scrim this wheel actually paints rather than from the
+  // theme's own light/dark declaration. What a logo has to hold its own
+  // against is the surface directly behind it, and a theme is free to declare
+  // one thing while giving its menu surface another.
+  readonly property bool darkBacking: (0.2126 * scrimFill.r
+                                     + 0.7152 * scrimFill.g
+                                     + 0.0722 * scrimFill.b) < 0.5
+
+  // Most marks are legible either way and ship as one file. A mark that is
+  // only legible against one backing -- anything built out of white, or out of
+  // near-black -- ships two and sets `mediaThemed`, and the suffix names the
+  // backing the file is for, not the colour of the art in it: `-dark` is the
+  // one to use on a dark wheel, so its artwork is the light one.
   function mediaIconFor(entry) {
     if (!entry || root.pluginDir === "") return ""
     var name = entry.media === undefined ? String(entry.id || "") : String(entry.media)
     if (!name) return ""
+    if (entry.mediaThemed === true) name += root.darkBacking ? "-dark" : "-light"
     return Util.fileUrl(root.pluginDir + "/media/" + name + ".png")
   }
 

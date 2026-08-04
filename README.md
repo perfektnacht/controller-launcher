@@ -32,6 +32,12 @@ application that is not installed has no icon-theme entry by definition, so
 without bundled art every uninstalled wedge would fall back to a glyph, and
 several of those are simply missing from JetBrainsMono Nerd Font.
 
+A few marks are only legible against one kind of background — anything built
+out of white, or out of near-black. Those ship as a pair and the wheel picks
+between them by measuring the luminance of the scrim it is about to paint,
+rather than trusting the theme's own light/dark label: what a logo has to hold
+its own against is the surface directly behind it.
+
 Circle / B while holding cancels. So does Escape, or a click anywhere outside
 the wheel — every cell is also clickable, so the wheel works with a mouse and
 is testable with no controller attached at all.
@@ -68,12 +74,16 @@ so under the inert rule it could only ever be a permanently dead sector.
 a ROM path through fuzzy menus to generate a per-game `.desktop` — a keyboard
 flow, and precisely what this wheel exists to avoid.
 
-One entry ships switched off rather than absent. **Prism** is a third-party
-Minecraft launcher, not part of Omarchy's roster, so it does not belong on
-everyone's wheel — but it is the case that most punishes hand-written config,
-because it installs three different ways and the obvious guard is wrong for two
-of them. It is already written and tested; tick it in the bar menu to put it on
-the ring. See [Switching entries on and off](#switching-entries-on-and-off).
+Two entries ship switched off rather than absent. **Prism** is a third-party
+Minecraft launcher and **Moonlight** streams from a PC running Sunshine or
+GeForce Experience; neither is part of Omarchy's roster, so neither belongs on
+everyone's wheel. Both are the cases that most punish hand-written config,
+because each installs more than one way and the obvious guard is wrong for most
+of them — Prism's package and binary share a name only if you picked the right
+package, and Moonlight's binary is `moonlight` while its package is
+`moonlight-qt`. Both are already written and tested; tick either in the bar
+menu to put it on the ring. See
+[Switching entries on and off](#switching-entries-on-and-off).
 
 If you ever get down to a single entry, the wheel gives it a **Desktop** cell
 for company, taking the bottom half. One entry alone would mean one sector
@@ -223,15 +233,13 @@ key. It is merged over the defaults, so you only name what you are changing:
 {
   "steam": { "sublabel": "Big Picture, 4K" },
   "battlenet": { "when": "false" },
-  "moonlight": {
-    "icon": "moonlight",
-    "glyph": "󰊴",
-    "accent": "#8bc34a",
-    "label": "Moonlight",
-    "sublabel": "Streaming",
-    "installed": "command -v moonlight",
-    "action": "moonlight",
-    "install": "omarchy-launch-floating-terminal-with-presentation 'yay -S moonlight-qt'"
+  "bottles": {
+    "icon": "com.usebottles.bottles",
+    "accent": "#c39b6a",
+    "label": "Bottles",
+    "sublabel": "Wine",
+    "installed": "flatpak info com.usebottles.bottles >/dev/null 2>&1",
+    "action": "exec flatpak run com.usebottles.bottles"
   }
 }
 ```
@@ -247,6 +255,7 @@ Wheel order follows key order. The fields:
 | `accent` | brand color for the wedge, hub, and halo; empty inherits the theme accent |
 | `icon` | icon-theme name, tried first |
 | `media` | basename in `media/`, defaults to the entry id; `""` skips to the glyph |
+| `mediaThemed` | the art ships as `<media>-dark.png` and `<media>-light.png`, picked by the wheel's own backing |
 | `glyph` | nerd-font fallback |
 
 All three of `when`, `installed` and `action` are run through a shell, so they
@@ -429,6 +438,13 @@ themselves. Sources:
 - `prismlauncher` — the Prism Launcher project's own logo
 - `battlenet`, `retroarch` — [simple-icons](https://simpleicons.org), tinted to
   each entry's accent
+- `moonlight-dark`, `moonlight-light` — rasterised from the SVG shipped in
+  Arch's `moonlight-qt` package, tinted the same way. The mark is two-tone
+  white and near-black, which is exactly the case that needs a pair. The suffix
+  names the backing the file is for, not the colour of the art in it:
+  `-dark` is the one for a dark wheel, so it is the one that keeps the white
+  spokes, and `-light` swaps them for a deep neutral so they do not vanish on a
+  pale one
 
 These are the applications' own marks, included to identify them. They belong
 to their respective owners.

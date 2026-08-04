@@ -70,6 +70,18 @@
     "action": "if command -v prismlauncher >/dev/null 2>&1; then exec prismlauncher; else exec flatpak run org.prismlauncher.PrismLauncher; fi",
     "install": ""
   },
+  "moonlight": {
+    "icon": "moonlight",
+    "glyph": "",
+    "accent": "#35b8b0",
+    "label": "Moonlight",
+    "sublabel": "Streaming",
+    "when": "false",
+    "mediaThemed": true,
+    "installed": "command -v moonlight >/dev/null 2>&1 || flatpak info com.moonlight_stream.Moonlight >/dev/null 2>&1",
+    "action": "if command -v moonlight >/dev/null 2>&1; then exec moonlight; else exec flatpak run com.moonlight_stream.Moonlight; fi",
+    "install": ""
+  },
   "geforce-now": {
     "icon": "com.nvidia.geforcenow",
     "glyph": "\udb82\udcb9",

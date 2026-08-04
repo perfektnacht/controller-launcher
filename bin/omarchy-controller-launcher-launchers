@@ -130,6 +130,7 @@ jq -n --argjson all "$merged" --argjson ids "$ids_json" --argjson states "$state
           glyph: (.glyph // ""),
           accent: (.accent // ""),
           media: (.media // .id),
+          mediaThemed: (.mediaThemed == true),
           installed,
           action: (.action // ""),
           install: (.install // "")
