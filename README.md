@@ -68,6 +68,20 @@ so under the inert rule it could only ever be a permanently dead sector.
 a ROM path through fuzzy menus to generate a per-game `.desktop` — a keyboard
 flow, and precisely what this wheel exists to avoid.
 
+One entry ships switched off rather than absent. **Prism** is a third-party
+Minecraft launcher, not part of Omarchy's roster, so it does not belong on
+everyone's wheel — but it is the case that most punishes hand-written config,
+because it installs three different ways and the obvious guard is wrong for two
+of them. It is already written and tested; tick it in the bar menu to put it on
+the ring. See [Switching entries on and off](#switching-entries-on-and-off).
+
+If you ever get down to a single entry, the wheel gives it a **Desktop** cell
+for company, taking the bottom half. One entry alone would mean one sector
+spanning the whole circle, so any push of the stick would arm a launch with no
+direction that means *not that one* — releasing dead centre would still
+dismiss, but that is something you have to know rather than something the ring
+shows you.
+
 ## Nothing persists
 
 Removing this plugin returns the machine to exactly where it started. That is a
@@ -135,7 +149,7 @@ shell starts, so the restart is what actually loads changed QML.
 
 The bar widget shows a controller glyph — dim when passive, bright when
 capturing. Left click toggles capture; right click opens a menu holding the
-controller picker and the wheel itself.
+controller picker, the wheel's contents, and the wheel itself.
 
 To remove it again:
 
@@ -144,6 +158,63 @@ omarchy plugin remove perfektnacht.controller-launcher
 ```
 
 ## Configuration
+
+Which entries appear is a checkbox in the bar menu. Everything else — labels,
+colors, what an entry actually runs, entries of your own — is a JSON file.
+
+### Switching entries on and off
+
+Right-click the bar widget. Under the controller picker is every entry the
+wheel knows about, the switched-off ones included, and clicking one flips it.
+This one has been customised a little — Battle.net switched off, and a
+hand-written condition on Lutris:
+
+```
+On the wheel
+ ✓ Steam
+ ✓ Heroic
+   Battle.net
+ ✓ Lutris                          rule
+ ✓ RetroArch
+ ✓ Minecraft            not installed
+   Prism                not installed
+ ✓ GeForce NOW          not installed
+ ✓ Xbox Cloud           not installed
+ ✓ Desktop
+```
+
+Switched-off entries keep their place in that list rather than sinking to the
+bottom, so nothing reorders under the cursor and an entry switched back on
+returns to the slot it always had — the same reason the wheel itself never
+moves a sector. The menu stays open as you click, since rearranging the wheel
+means a few of these at once.
+
+*not installed* is a warning, not a refusal: you can put an entry on the ring
+before installing the application, and it will sit there inert until you do.
+
+*rule* means the entry's `when` is an expression rather than a plain yes or
+no, and the menu will not touch it. Flipping it would mean overwriting whatever
+condition you wrote there, with nothing to undo it — so those rows show their
+state and decline to respond. Edit the file if you want to change one.
+
+The same thing from a terminal, which is what the menu calls:
+
+```bash
+cd ~/.config/omarchy/plugins/perfektnacht.controller-launcher
+bin/omarchy-controller-launcher-launchers --all           # every entry, with state
+bin/omarchy-controller-launcher-toggle prismlauncher on   # on | off | flip
+```
+
+Without `--all`, the first command prints what the wheel will draw — which is
+also what the wheel itself runs on every summon.
+
+The toggle writes `when` into your extensions file and nothing else. It will
+not overwrite a file it cannot parse, it refuses expression guards the same way
+the menu does, and switching an entry back to how it ships removes the override
+rather than pinning it — so the file only ever carries the decisions that
+differ from the defaults.
+
+### The entries themselves
 
 Drop a `~/.config/omarchy/extensions/gamepad-wheel.json` to override entries by
 key. It is merged over the defaults, so you only name what you are changing:
@@ -169,7 +240,7 @@ Wheel order follows key order. The fields:
 
 | Field | Meaning |
 |---|---|
-| `when` | should this entry appear at all — set `"false"` to hide a default |
+| `when` | should this entry appear at all — set `"false"` to hide a default. A plain `"true"` or `"false"` is what the bar menu switches; an expression locks the row against it |
 | `installed` | shell guard; a non-zero exit renders the entry inert |
 | `action` | run when installed; empty just dismisses, which is the `desktop` cell |
 | `install` | carried through but unused — reserved, in case install-on-select ever returns behind a flag |
@@ -177,6 +248,33 @@ Wheel order follows key order. The fields:
 | `icon` | icon-theme name, tried first |
 | `media` | basename in `media/`, defaults to the entry id; `""` skips to the glyph |
 | `glyph` | nerd-font fallback |
+
+All three of `when`, `installed` and `action` are run through a shell, so they
+can be whole expressions rather than single commands — but not the same shell.
+The two guards run under `bash -c`, inheriting the shell's environment; the
+action runs under `bash -lc`, so it gets your login profile and whatever `PATH`
+that sets up. Worth knowing if a launcher lives somewhere only your profile
+knows about: the entry can launch fine and still read as not installed.
+
+**Ask what the machine can launch, not which package it came from.** The
+temptation is `omarchy-pkg-present <name>`, but that is `pacman -Q` on that
+exact name, so an application installed from a different package — an AUR `-git`
+variant, a flatpak — reads as missing and the entry sits greyed out with the
+thing sitting right there. `command -v` does not care what provided the binary.
+The shipped Prism entry is the worked example:
+
+```json
+"installed": "command -v prismlauncher >/dev/null 2>&1 || flatpak info org.prismlauncher.PrismLauncher >/dev/null 2>&1",
+"action": "if command -v prismlauncher >/dev/null 2>&1; then exec prismlauncher; else exec flatpak run org.prismlauncher.PrismLauncher; fi"
+```
+
+Three install routes, two launch shapes — the repo package and the `-git`
+package put the same binary on `PATH` — and nothing to edit when you switch
+between them.
+
+Guards run on every summon, so keep them local. `command -v`, `pacman -Q` and
+`flatpak info` are all instant; anything that queries a remote will stall the
+refresh.
 
 ### The summon button
 
@@ -225,6 +323,11 @@ Controller
  ● Automatic
  ○ Sony Interactive Entertainment DualSense Wireless Controller  (in use)
  ○ Valve Software Steam Controller Puck
+ ─────────────────────────────────────
+On the wheel
+ ✓ Steam
+   Battle.net
+ ✓ Lutris                          rule
  ─────────────────────────────────────
  Open the wheel
 ```
@@ -306,6 +409,12 @@ DualSense on, and have the wheel follow you across without a restart.
   running. On a Steam Controller the wheel still appears, but Big Picture Mode
   opens with it and takes the stick, so no selection can be made. Close Steam to
   use the wheel properly.
+- **Around a dozen entries is the practical ceiling.** Nothing caps the list and
+  the aiming stays exact at any size — sectors are just `360 / count`. What runs
+  out is room: each icon and label sits in a fixed-size box on a fixed orbit, so
+  above roughly twelve they start overlapping and the labels collide. Nine has
+  room to spare, fourteen is tight but legible, twenty is unusable. Switch
+  entries off rather than crowding them in.
 
 ## Bundled art
 
@@ -317,6 +426,7 @@ themselves. Sources:
   the same set Omarchy's own Xbox installer pulls from
 - `heroic` — the Heroic Games Launcher repo
 - `lutris` — the Lutris repo
+- `prismlauncher` — the Prism Launcher project's own logo
 - `battlenet`, `retroarch` — [simple-icons](https://simpleicons.org), tinted to
   each entry's accent
 
