@@ -51,6 +51,15 @@ die() {
   exit "$code"
 }
 
+# Ahead of the argument count, or asking for help would be answered by the
+# complaint that help is not two arguments.
+case "${1-}" in
+-h | --help)
+  usage
+  exit 0
+  ;;
+esac
+
 [[ $# -eq 2 ]] || {
   usage >&2
   exit $EXIT_USAGE
