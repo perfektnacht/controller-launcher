@@ -62,11 +62,10 @@
   "prismlauncher": {
     "icon": "org.prismlauncher.PrismLauncher",
     "glyph": "󰆧",
-    "accent": "#2d9d5c",
+    "accent": "#5d62a4",
     "label": "Prism",
     "sublabel": "Minecraft",
     "when": "false",
-    "media": "",
     "installed": "command -v prismlauncher >/dev/null 2>&1 || flatpak info org.prismlauncher.PrismLauncher >/dev/null 2>&1",
     "action": "if command -v prismlauncher >/dev/null 2>&1; then exec prismlauncher; else exec flatpak run org.prismlauncher.PrismLauncher; fi",
     "install": ""
