@@ -115,6 +115,16 @@ persisted anywhere, so every shell start comes up passive. Input capture is
 always something you switched on this session, never something a previous one
 left behind.
 
+**Launching drops back to passive.** A launch hands the controller to whatever
+just opened, so capture has done its job, and keeping it would break the thing
+you launched: the grab is device-wide, so a launcher reading the pad through
+evdev — an Electron one through the browser gamepad API, say — sees a device
+that never sends an event and reads as having no controller attached. Heroic is
+the case you notice, because Steam talks to a DualSense over hidraw and is
+unaffected. Dismissing does not disarm, and neither does releasing on an entry
+that is not installed: both leave you at the desktop with the controller still
+in your hands, which is exactly when the next summon has to work.
+
 Beyond that, the plugin does not:
 
 - write to `~/.config/hypr/` or add any keybind (it reads the gamepad directly)

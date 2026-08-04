@@ -312,6 +312,21 @@ Item {
     var action = String(entry.action || "")
     if (!action) return  // the Desktop cell: dismissing is the whole action
     Quickshell.execDetached(["bash", "-lc", action])
+    root.releaseController()
+  }
+
+  // A launch hands the controller to whatever just opened, so capture has done
+  // its job and holding on is actively harmful: the grab is device-wide, so a
+  // launcher reading the pad through evdev -- an Electron one through the
+  // browser gamepad API, say -- sees a device that never sends an event, and
+  // reads as having no controller at all.
+  //
+  // Only on a real launch. Dismissing, or releasing on an entry that is not
+  // installed, leaves you at the desktop with the controller still in your
+  // hands, which is exactly when the next summon has to work.
+  function releaseController() {
+    var live = root.liveService()
+    if (live && typeof live.disarm === "function") live.disarm()
   }
 
   // ------------------------------------------------------------------- ui
