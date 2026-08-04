@@ -92,7 +92,42 @@ Item {
     return Util.fileUrl(root.pluginDir + "/media/" + name + ".png")
   }
 
-  readonly property int count: launchers.length
+  // A wheel of one has no aim that means "not that one": `step` is the whole
+  // circle, so every direction past the threshold picks the single entry and
+  // the smallest nudge of the stick arms a launch. Releasing dead centre still
+  // dismisses, but that is a thing you have to know rather than see.
+  //
+  // So a lone launcher is given somewhere to point away from. Two cells put
+  // the dismiss on compass 90 through 269 -- the bottom half -- which is where
+  // `desktop` lands anyway when it is switched on, so the wheel reads the same
+  // whether the escape is the user's own cell or this one.
+  //
+  // Keyed off an empty action rather than the id, so a dismiss cell someone
+  // renamed still counts as one and does not earn a second.
+  readonly property var cells: {
+    var list = Array.isArray(root.launchers) ? root.launchers : []
+    if (list.length !== 1) return list
+    if (String(list[0].action || "") === "") return list
+    return list.concat([root.dismissCell])
+  }
+
+  // Mirrors the shipped `desktop` entry, but cannot be read from launchers.json
+  // -- by the time the wheel is short an escape, that entry is exactly what has
+  // been filtered out.
+  readonly property var dismissCell: ({
+    id: "desktop",
+    label: "Desktop",
+    sublabel: "Dismiss",
+    icon: "",
+    glyph: "󰍹",
+    accent: "",
+    media: "",
+    installed: true,
+    action: "",
+    install: ""
+  })
+
+  readonly property int count: cells.length
   readonly property real step: count > 0 ? 360 / count : 360
 
   // --------------------------------------------------------------- aiming
@@ -112,7 +147,7 @@ Item {
   }
 
   readonly property var selectedEntry: (selectedIndex >= 0 && selectedIndex < count)
-    ? launchers[selectedIndex] : null
+    ? cells[selectedIndex] : null
 
   // An entry that cannot be chosen does not get to wear its brand color; a
   // full-strength accent reads as actionable.
@@ -318,7 +353,7 @@ Item {
         // ------------------------------------------------------- the wedges
 
         Repeater {
-          model: root.launchers
+          model: root.cells
 
           delegate: Shape {
             id: wedge
@@ -409,7 +444,7 @@ Item {
         // ------------------------------------------------- wedge face content
 
         Repeater {
-          model: root.launchers
+          model: root.cells
 
           delegate: Item {
             id: face
