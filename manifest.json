@@ -4,6 +4,7 @@
   "name": "Gamepad Wheel",
   "version": "0.1.0",
   "author": "perfektnacht",
+  "license": "MIT",
   "description": "Hold a controller button for a radial wheel of your game launchers, each opening in its console/gaming mode",
   "kinds": [
     "service",

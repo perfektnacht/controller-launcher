@@ -458,3 +458,13 @@ themselves. Sources:
 
 These are the applications' own marks, included to identify them. They belong
 to their respective owners.
+
+## License
+
+MIT — see [LICENSE](LICENSE), which also lists the plugin's external
+dependencies and the upstream license of every logo in `media/`.
+
+Nothing here has an install step: the daemon is Python 3 stdlib only, the
+helper scripts are bash and `jq`, and the rest is QML the Omarchy shell already
+knows how to load. The launchers the wheel points at are not dependencies —
+an entry whose guard fails just sits inert.
