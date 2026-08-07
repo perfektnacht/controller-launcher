@@ -99,7 +99,7 @@
     "label": "Xbox Cloud",
     "sublabel": "Streaming",
     "installed": "[[ -f \"$HOME/.local/share/applications/Xbox Cloud Gaming.desktop\" ]]",
-    "action": "omarchy-launch-webapp https://www.xbox.com/en-US/play",
+    "action": "(for i in $(seq 1 50); do hyprctl clients -j 2>/dev/null | jq -e 'any(.[]; .class | test(\"xbox\\\\.com\"; \"i\"))' >/dev/null 2>&1 && hyprctl dispatch 'hl.dsp.window.fullscreen({mode=\"fullscreen\", window=\"class:.*xbox\\\\.com.*\"})' >/dev/null 2>&1 && break; sleep 0.2; done &) ; exec omarchy-launch-webapp https://www.xbox.com/en-US/play",
     "install": "omarchy-launch-floating-terminal-with-presentation omarchy-install-gaming-xbox-cloud"
   },
   "desktop": {
