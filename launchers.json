@@ -89,7 +89,7 @@
     "label": "GeForce NOW",
     "sublabel": "Streaming",
     "installed": "flatpak info com.nvidia.geforcenow",
-    "action": "flatpak run com.nvidia.geforcenow",
+    "action": "(for i in $(seq 1 50); do hyprctl clients -j 2>/dev/null | jq -e 'any(.[]; .class==\"GeForceNOW\")' >/dev/null 2>&1 && hyprctl dispatch 'hl.dsp.window.fullscreen({mode=\"fullscreen\", window=\"class:^(GeForceNOW)$\"})' >/dev/null 2>&1 && break; sleep 0.2; done &) ; exec flatpak run com.nvidia.geforcenow",
     "install": "omarchy-launch-floating-terminal-with-presentation omarchy-install-gaming-geforce-now"
   },
   "xbox-cloud": {
