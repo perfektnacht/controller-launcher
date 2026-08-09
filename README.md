@@ -7,6 +7,19 @@ keyboard.
 
 ![the wheel](screenshot.png)
 
+```bash
+# install
+omarchy plugin add https://github.com/perfektnacht/controller-launcher --enable && omarchy restart shell
+
+# update
+omarchy plugin update perfektnacht.controller-launcher && omarchy restart shell
+
+# remove
+omarchy plugin remove perfektnacht.controller-launcher
+```
+
+Details in [Install](#install) below.
+
 ## What it does
 
 Holding the summon button (PS / Xbox / Steam by default) puts a donut of arc
@@ -142,40 +155,27 @@ of which `omarchy plugin remove` cleans up.
 
 ## Install
 
-```bash
-omarchy plugin add https://github.com/perfektnacht/controller-launcher --enable && omarchy restart shell
-```
+The three lines at the top are the whole of it. What they are doing:
 
-That clones the repository into `~/.config/omarchy/plugins/`, then asks whether
-to place the bar widget left, center, or right, preselected to `right`; `--yes`
-takes `right` without asking. The install directory is named from the manifest's
-`id`, not from the repository, so it lands at
+`omarchy plugin add` clones the repository into `~/.config/omarchy/plugins/`,
+then asks whether to place the bar widget left, center, or right, preselected
+to `right`; `--yes` takes `right` without asking. The install directory is
+named from the manifest's `id`, not from the repository, so it lands at
 `~/.config/omarchy/plugins/perfektnacht.controller-launcher` — the shell will
 not find the plugin if the two disagree.
 
-The restart is part of the line because entry points are read when the shell
-starts: without it the plugin is installed and enabled but nothing appears in
-the bar until the next restart, which reads as the install having failed.
+The restart is part of both the install and the update line because entry
+points are read when the shell starts. Without it on install, the plugin is
+installed and enabled but nothing appears in the bar until the next restart,
+which reads as the install having failed; without it on update, `omarchy plugin
+update` has pulled and rescanned but the shell is still running the old QML.
 
-To update later:
-
-```bash
-omarchy plugin update perfektnacht.controller-launcher
-omarchy restart shell
-```
-
-`omarchy plugin update` pulls and rescans, but entry points are read when the
-shell starts, so the restart is what actually loads changed QML.
+`omarchy plugin remove` needs no restart and leaves nothing behind — see
+[Nothing persists](#nothing-persists).
 
 The bar widget shows a controller glyph — dim when passive, bright when
 capturing. Left click toggles capture; right click opens a menu holding the
 controller picker, the wheel's contents, and the wheel itself.
-
-To remove it again:
-
-```bash
-omarchy plugin remove perfektnacht.controller-launcher
-```
 
 ## Configuration
 
