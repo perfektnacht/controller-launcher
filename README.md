@@ -20,6 +20,25 @@ omarchy plugin remove perfektnacht.controller-launcher
 
 Details in [Install](#install) below.
 
+## Requirements
+
+Omarchy 4 or newer, and a gamepad. Nothing here has an install step of its own,
+and nothing is bundled or vendored:
+
+| Needs | For | Notes |
+|-------|-----|-------|
+| Omarchy 4+ | Hosting the overlay and the bar widget | Provides the Quickshell runtime too |
+| Python 3 | The daemon that reads the controller | Standard library only — no pip, no venv |
+| `bash`, `jq`, coreutils | The helper scripts that build the wheel's entry list | All already present on Omarchy |
+
+The daemon reads gamepad events from `/dev/input/event*`, read-only. No udev
+rule is installed and none is needed: logind's ACL already grants the seat
+owner access to their own input devices.
+
+The launchers the wheel points at — Steam, Lutris, Heroic and the rest — are
+**not** dependencies. An entry whose guard fails just sits inert, so the wheel
+still opens on a machine with none of them installed.
+
 ## What it does
 
 Holding the summon button (PS / Xbox / Steam by default) puts a donut of arc
@@ -464,7 +483,7 @@ to their respective owners.
 MIT — see [LICENSE](LICENSE), which also lists the plugin's external
 dependencies and the upstream license of every logo in `media/`.
 
-Nothing here has an install step: the daemon is Python 3 stdlib only, the
-helper scripts are bash and `jq`, and the rest is QML the Omarchy shell already
-knows how to load. The launchers the wheel points at are not dependencies —
-an entry whose guard fails just sits inert.
+What it needs to run is in [Requirements](#requirements), and none of it is
+bundled or vendored here — the daemon is Python 3 standard library, the helper
+scripts are bash, `jq` and coreutils, and the rest is QML the Omarchy shell
+already knows how to load.
