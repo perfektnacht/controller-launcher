@@ -478,6 +478,49 @@ themselves. Sources:
 These are the applications' own marks, included to identify them. They belong
 to their respective owners.
 
+## Security
+
+Reviewed against the [Omarchy Plugin Marketplace][mp]'s pre-submission security
+scan on 19 August 2026, at commit `136678f`. Fixes landed in `db416e9`.
+
+**This is a self-review, not a marketplace audit.** Nobody from the marketplace
+has reviewed this repository. Omarchy plugins run unsandboxed as upstream code,
+so no scan — this one included — makes a plugin safe. It is published so you can
+check the claims rather than take them.
+
+### What it can do
+
+Running a launcher means running a command, so this plugin executes shell
+strings by design — the same way a `.desktop` file's `Exec=` line does. Those
+strings come from `launchers.json` and from your own config file. It also reads
+gamepad events from `/dev/input/event*`, read-only. It makes no network
+connections.
+
+### What the scan changed
+
+**Text from outside is no longer allowed to become rich text.** QML's `Text`
+defaults to `AutoText`, which sniffs its input for markup and quietly upgrades
+to rich text — and rich text resolves `<img src="...">`, local paths and remote
+URLs alike, from the shell process. The bar renders a controller's
+*self-reported* name, which is a string the hardware chooses, so a USB device
+that named itself with an `img` tag could have made the bar fetch a URL. That
+Text and the four others carrying config or subprocess output are now pinned to
+`PlainText`.
+
+**Your config file is checked before its guards are trusted.** The `when` and
+`installed` guards are shell expressions evaluated on every summon, which makes
+`~/.config/omarchy/extensions/gamepad-wheel.json` executable configuration — in
+a directory other extensions also write to. It is now held to the rule ssh uses
+for its own config: it has to be owned by you, and not writable by group or
+others. A file that fails is skipped with a message rather than being fatal, so
+a bad mode costs you your customisations and not your wheel.
+
+Found something this missed? Report it privately through the marketplace's
+[security policy][sec], or open an issue here.
+
+[mp]: https://github.com/HANCORE-linux/omarchy-plugin-marketplace
+[sec]: https://github.com/HANCORE-linux/omarchy-plugin-marketplace/blob/main/SECURITY.md
+
 ## License
 
 MIT — see [LICENSE](LICENSE), which also lists the plugin's external
