@@ -201,6 +201,8 @@ BarWidget {
               anchors.left: mark.right
               anchors.right: inUse.visible ? inUse.left : parent.right
               anchors.rightMargin: inUse.visible ? Style.space(8) : 0
+              // External input (device name, subprocess text, config). Never AutoText.
+              textFormat: Text.PlainText
               text: root.shortName(deviceRow.modelData.name)
               color: root.foreground
               font.family: root.fontFamily
@@ -235,6 +237,8 @@ BarWidget {
         Text {
           visible: root.catalogError !== ""
           width: menuColumn.width
+          // External input (device name, subprocess text, config). Never AutoText.
+          textFormat: Text.PlainText
           text: root.catalogError
           color: Color.urgent
           font.family: root.fontFamily
@@ -301,6 +305,8 @@ BarWidget {
               anchors.left: check.right
               anchors.right: note.visible ? note.left : parent.right
               anchors.rightMargin: note.visible ? Style.space(8) : 0
+              // External input (device name, subprocess text, config). Never AutoText.
+              textFormat: Text.PlainText
               text: String(entryRow.modelData.label || entryRow.entryId)
               // Switched off is still a choice you can reverse, so those rows
               // stay readable. Locked is dimmer because it will not respond.

@@ -53,7 +53,31 @@ user_file="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/extensions/gamepad-wheel.js
 
 [[ -f $defaults ]] || { echo "[]"; exit 0; }
 
-if [[ -f $user_file ]] && jq -e . "$user_file" >/dev/null 2>&1; then
+# `when` and `installed` are shell expressions, evaluated below. That makes this
+# file executable configuration, and it sits in an extensions directory that
+# other things also write to. So anything able to write it can run commands in
+# this session -- which is fine when that is you, and not fine otherwise.
+#
+# The rule ssh uses for its own config: it has to be yours, and nobody else may
+# be able to write it. A file that fails is skipped rather than fatal, so a bad
+# mode costs you your customisations, not your wheel.
+config_is_trustworthy() {
+  local f=$1 owner mode
+  owner=$(stat -Lc %u "$f" 2>/dev/null) || return 1
+  if [[ $owner != "$(id -u)" ]]; then
+    echo "ignoring $f: owned by uid $owner, not you" >&2
+    return 1
+  fi
+  mode=$(stat -Lc %a "$f" 2>/dev/null) || return 1
+  if (( (8#$mode & 8#022) != 0 )); then
+    echo "ignoring $f: mode $mode lets group or others write it (chmod 600 to fix)" >&2
+    return 1
+  fi
+  return 0
+}
+
+if [[ -f $user_file ]] && config_is_trustworthy "$user_file" \
+  && jq -e . "$user_file" >/dev/null 2>&1; then
   merged=$(jq -s '.[0] * .[1]' "$defaults" "$user_file")
 else
   merged=$(cat "$defaults")

@@ -541,6 +541,8 @@ Item {
                 font.family: root.fontFamily
                 font.pixelSize: root.glyphSize
                 color: face.selected ? root.accentFor(face.modelData) : root.foreground
+                // Comes from launchers.json. Never AutoText.
+                textFormat: Text.PlainText
                 text: String(face.modelData.glyph || "")
               }
 
@@ -553,6 +555,8 @@ Item {
                 font.bold: face.selected
                 color: face.selected ? root.accentFor(face.modelData) : root.foreground
                 opacity: face.selected ? 1 : 0.75
+                // Comes from launchers.json. Never AutoText.
+                textFormat: Text.PlainText
                 text: String(face.modelData.label || "")
               }
 
