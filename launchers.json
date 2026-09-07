@@ -82,6 +82,17 @@
     "action": "if command -v moonlight >/dev/null 2>&1; then exec moonlight; else exec flatpak run com.moonlight_stream.Moonlight; fi",
     "install": ""
   },
+  "omakade": {
+    "icon": "io.github.tsouth89.Omakade",
+    "glyph": "",
+    "accent": "",
+    "label": "Omakade",
+    "sublabel": "Library",
+    "when": "false",
+    "installed": "command -v omakade >/dev/null 2>&1",
+    "action": "omakade",
+    "install": ""
+  },
   "geforce-now": {
     "icon": "com.nvidia.geforcenow",
     "glyph": "\udb82\udcb9",

@@ -39,7 +39,7 @@ depends on what Omarchy already provides:
   and the `omarchy-install-gaming-*` scripts
 
 The game launchers the wheel points at (Steam, Heroic, Lutris, RetroArch,
-Prism, Moonlight, and the rest) are **not** dependencies. None is bundled or
+Prism, Moonlight, Omakade, and the rest) are **not** dependencies. None is bundled or
 installed by this plugin; an entry whose `installed` guard fails simply sits
 inert on the wheel.
 
@@ -57,6 +57,7 @@ entry launches, and all rights in them remain with their owners.
 | `heroic.png` | [Heroic Games Launcher](https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher) | GPL-3.0 |
 | `lutris.png` | [Lutris](https://github.com/lutris/lutris) | GPL-3.0 |
 | `prismlauncher.png` | [Prism Launcher](https://github.com/PrismLauncher/PrismLauncher) | GPL-3.0 |
+| `omakade.png` | rasterised from the SVG in [Omakade](https://github.com/tsouth89/omakade) | GPL-3.0 |
 | `moonlight-dark.png`, `moonlight-light.png` | rasterised from the SVG in Arch's `moonlight-qt` package ([moonlight-qt](https://github.com/moonlight-stream/moonlight-qt)) | GPL-3.0 |
 
 `battlenet.png`, `retroarch.png`, `moonlight-dark.png` and `moonlight-light.png`

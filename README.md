@@ -106,15 +106,17 @@ so under the inert rule it could only ever be a permanently dead sector.
 a ROM path through fuzzy menus to generate a per-game `.desktop` — a keyboard
 flow, and precisely what this wheel exists to avoid.
 
-Two entries ship switched off rather than absent. **Prism** is a third-party
-Minecraft launcher and **Moonlight** streams from a PC running Sunshine or
-GeForce Experience; neither is part of Omarchy's roster, so neither belongs on
-everyone's wheel. Both are the cases that most punish hand-written config,
+Three entries ship switched off rather than absent. **Prism** is a third-party
+Minecraft launcher, **Moonlight** streams from a PC running Sunshine or
+GeForce Experience, and **Omakade** is a community game library that gathers
+Steam, Lutris, Heroic, Faugus, and RetroArch into one controller-ready view.
+None of them is part of Omarchy's roster, so none belongs on everyone's wheel.
+Prism and Moonlight are the cases that most punish hand-written config,
 because each installs more than one way and the obvious guard is wrong for most
 of them — Prism's package and binary share a name only if you picked the right
 package, and Moonlight's binary is `moonlight` while its package is
-`moonlight-qt`. Both are already written and tested; tick either in the bar
-menu to put it on the ring. See
+`moonlight-qt`. All three are already written and tested; tick any of them in
+the bar menu to put it on the ring. See
 [Switching entries on and off](#switching-entries-on-and-off).
 
 If you ever get down to a single entry, the wheel gives it a **Desktop** cell
@@ -217,6 +219,8 @@ On the wheel
  ✓ RetroArch
  ✓ Minecraft            not installed
    Prism                not installed
+   Moonlight            not installed
+   Omakade              not installed
  ✓ GeForce NOW          not installed
  ✓ Xbox Cloud           not installed
  ✓ Desktop
@@ -465,6 +469,7 @@ themselves. Sources:
 - `heroic` — the Heroic Games Launcher repo
 - `lutris` — the Lutris repo
 - `prismlauncher` — the Prism Launcher project's own logo
+- `omakade` — rasterised from the SVG shipped by [Omakade](https://github.com/tsouth89/omakade)
 - `battlenet`, `retroarch` — [simple-icons](https://simpleicons.org), tinted to
   each entry's accent
 - `moonlight-dark`, `moonlight-light` — rasterised from the SVG shipped in
