@@ -77,7 +77,16 @@ Item {
   readonly property int hubIconSize: Math.round(hubRadius * 0.52)
   readonly property int glyphSize: Math.round(faceSize * 0.40)
 
-  readonly property string pluginDir: (manifest && manifest.__sourceDir) ? String(manifest.__sourceDir) : ""
+  // Third-party installs get a manifest without __sourceDir, so fall back to
+  // where this file was loaded from, which is the plugin directory.
+  readonly property string pluginDir: (manifest && manifest.__sourceDir)
+    ? String(manifest.__sourceDir) : root.ownDir()
+
+  function ownDir() {
+    var url = String(Qt.resolvedUrl("."))
+    if (url.indexOf("file://") !== 0) return ""
+    return decodeURIComponent(url.slice("file://".length)).replace(/\/+$/, "")
+  }
 
   // Bundled logos, named by entry id. These matter most for applications that
   // are NOT installed: with nothing on disk there is no icon-theme entry to
@@ -267,7 +276,7 @@ Item {
   // The service keeps the discovered list; the summon payload is only a
   // fallback for callers that hand us one directly (an IPC summon, say).
   //
-  // Also called by the service while the wheel is open, when discovery comes
+  // Also runs while the wheel is open, when the service's discovery comes
   // back with a list that differs from the one we opened with.
   function refreshLaunchers(payloadJson) {
     var live = root.liveService()
@@ -284,6 +293,17 @@ Item {
   }
 
   // ---------------------------------------------------------- daemon hooks
+
+  // The service cannot reach this overlay, so it announces daemon events and
+  // we pick them up here.
+  Connections {
+    target: root.liveService()
+    ignoreUnknownSignals: true
+    function onAimed(x, y) { root.setAim(x, y) }
+    function onAbortingRequested() { root.setAborting(true) }
+    function onCommitRequested() { root.commit() }
+    function onLaunchersRefreshed() { root.refreshLaunchers() }
+  }
 
   function setAim(x, y) {
     root.aimX = Number(x) || 0

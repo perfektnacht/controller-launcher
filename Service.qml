@@ -14,7 +14,27 @@ Item {
   property var manifest: null
 
   readonly property string pluginId: "perfektnacht.controller-launcher"
-  readonly property string pluginDir: (manifest && manifest.__sourceDir) ? String(manifest.__sourceDir) : ""
+  // The shell strips __sourceDir from manifests it hands to third-party
+  // plugins, so a normal `omarchy plugin add` install never sees it. This file
+  // was loaded from the plugin directory, so its own URL names that directory
+  // wherever it was installed. Still gated on `manifest` so the daemon starts
+  // at the same beat as before -- see onPluginDirChanged.
+  readonly property string pluginDir: !manifest ? ""
+    : manifest.__sourceDir ? String(manifest.__sourceDir) : root.ownDir()
+
+  function ownDir() {
+    var url = String(Qt.resolvedUrl("."))
+    if (url.indexOf("file://") !== 0) return ""
+    return decodeURIComponent(url.slice("file://".length)).replace(/\/+$/, "")
+  }
+
+  // Daemon events for the overlay. The overlay is handed this service and
+  // listens; the service cannot reach the overlay, because third-party plugins
+  // get no handle on the shell's panel loaders.
+  signal aimed(real x, real y)
+  signal abortingRequested()
+  signal commitRequested()
+  signal launchersRefreshed()
 
   // Mirrors of the daemon's state. The daemon is the source of truth for all
   // three -- we set them from its status lines rather than optimistically on
@@ -52,34 +72,41 @@ Item {
   readonly property string configuredDevice: root.settingValue("device")
 
   // Bar widgets are handed their shell.json entry as `settings`; services are
-  // not, so read the same entry the bar widget would. Layout first, then the
-  // top-level plugins array, which is the order the shell writes them in.
+  // not, so read the same entry the bar widget would.
   function settingValue(key) {
-    var config = root.shell ? root.shell.shellConfig : null
-    if (!config) return ""
+    return root.entryValue(root.ownEntry(), key)
+  }
 
-    var layout = (config.bar && config.bar.layout) ? config.bar.layout : {}
+  // Our shell.json entry: layout first, then the top-level plugins array,
+  // which is the order the shell writes them in. `barConfig` is all a
+  // third-party plugin is given; only a first-party shell also exposes the
+  // whole of shell.json, and with it `plugins`.
+  function ownEntry() {
+    var bar = root.shell ? root.shell.barConfig : null
+    var layout = (bar && bar.layout) ? bar.layout : {}
     var sections = ["left", "center", "right"]
     for (var s = 0; s < sections.length; s++) {
       var entries = layout[sections[s]] || []
       for (var i = 0; i < entries.length; i++) {
-        var found = root.entryValue(entries[i], key)
-        if (found !== "") return found
+        if (root.isOwnEntry(entries[i])) return entries[i]
       }
     }
 
-    var plugins = Array.isArray(config.plugins) ? config.plugins : []
+    var config = root.shell ? root.shell.shellConfig : null
+    var plugins = (config && Array.isArray(config.plugins)) ? config.plugins : []
     for (var p = 0; p < plugins.length; p++) {
-      var hit = root.entryValue(plugins[p], key)
-      if (hit !== "") return hit
+      if (root.isOwnEntry(plugins[p])) return plugins[p]
     }
-    return ""
+    return null
   }
 
   // Widget ids can carry an instance suffix, so match on the part before it.
+  function isOwnEntry(entry) {
+    return !!entry && !!entry.id && String(entry.id).split("#")[0] === root.pluginId
+  }
+
   function entryValue(entry, key) {
-    if (!entry || !entry.id) return ""
-    if (String(entry.id).split("#")[0] !== root.pluginId) return ""
+    if (!root.isOwnEntry(entry)) return ""
     return (key in entry) ? String(entry[key]) : ""
   }
 
@@ -152,11 +179,15 @@ Item {
   // Which controller to drive the wheel with. Empty hands it back to the
   // daemon's own preference order. Persisted through the same path the bar
   // widget's other settings take, so it survives a restart.
+  // updateEntryInline replaces the whole entry, so carry the other keys over.
+  // It returns false for an unchanged entry too, so there is nothing to report.
   function selectDevice(path) {
-    if (!root.shell || !root.shell.pluginRegistry) return
-    var error = root.shell.pluginRegistry.setBarWidget(
-      root.pluginId, "device", String(path || ""), {})
-    if (error) console.warn("controller-launcher: " + error)
+    if (!root.shell || typeof root.shell.updateEntryInline !== "function") return
+    var settings = ({})
+    var current = root.ownEntry() || {}
+    for (var k in current) if (k !== "id") settings[k] = current[k]
+    settings.device = String(path || "")
+    root.shell.updateEntryInline(root.pluginId, settings)
   }
 
   // The shell injects `manifest` after createObject, so pluginDir arrives one
@@ -184,12 +215,7 @@ Item {
 
   // The overlay is a separate entry point of this same plugin, mounted by the
   // shell's panel loader. keepLoaded in the manifest keeps it alive between
-  // summons so aim updates land on a live item.
-  function wheelItem() {
-    if (!root.shell || !root.shell.panelLoaders) return null
-    var loader = root.shell.panelLoaders[root.pluginId]
-    return (loader && loader.item) ? loader.item : null
-  }
+  // summons, so it is already listening when the signals above fire.
 
   function showWheel() {
     if (!root.shell) return
@@ -239,24 +265,19 @@ Item {
       root.showWheel()
       break
 
-    case "aim": {
-      var wheel = root.wheelItem()
-      if (wheel && typeof wheel.setAim === "function") wheel.setAim(event.x, event.y)
+    case "aim":
+      root.aimed(Number(event.x) || 0, Number(event.y) || 0)
       break
-    }
 
-    case "aborting": {
-      var aborting = root.wheelItem()
-      if (aborting && typeof aborting.setAborting === "function") aborting.setAborting(true)
+    case "aborting":
+      root.abortingRequested()
       break
-    }
 
-    case "commit": {
-      var target = root.wheelItem()
-      if (target && typeof target.commit === "function") target.commit()
+    // Delivery is synchronous, so the wheel launches before it is hidden.
+    case "commit":
+      root.commitRequested()
       root.hideWheel()
       break
-    }
 
     case "cancel":
       root.hideWheel()
@@ -307,8 +328,7 @@ Item {
       // we start on summon lands a beat after that. Hand the result to the
       // wheel already on screen, or the first summon after installing
       // something keeps showing it greyed out.
-      var wheel = root.wheelItem()
-      if (wheel && typeof wheel.refreshLaunchers === "function") wheel.refreshLaunchers()
+      root.launchersRefreshed()
     }
   }
 
